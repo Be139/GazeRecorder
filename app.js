@@ -7,7 +7,7 @@ const CALIBRATION_HOLD_MS = 1800;
 const CALIBRATION_RECORD_EVERY_MS = 180;
 const CALIBRATION_EVENT_TYPE = "click";
 const MEDIAPIPE_FACE_MESH_PATH = "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh";
-const BUILD_VERSION = "2026-05-03-v7";
+const BUILD_VERSION = "2026-05-03-v8";
 const CALIBRATION_POINTS = [
   { x: 15, y: 15 },
   { x: 50, y: 15 },
@@ -44,6 +44,7 @@ const state = {
   calibrationPointSamples: 0,
   calibrationTimeout: null,
   calibrationRecorder: null,
+  realGazeSamples: 0,
 };
 
 const el = {
@@ -53,9 +54,11 @@ const el = {
   startDetectionButton: document.querySelector("#startDetectionButton"),
   openFallbackButton: document.querySelector("#openFallbackButton"),
   cameraStatus: document.querySelector("#cameraStatus"),
+  cameraTrackStatus: document.querySelector("#cameraTrackStatus"),
   calibrationPointStatus: document.querySelector("#calibrationPointStatus"),
   calibrationSampleStatus: document.querySelector("#calibrationSampleStatus"),
   gazeStatus: document.querySelector("#gazeStatus"),
+  lastGazeStatus: document.querySelector("#lastGazeStatus"),
   calibrationStage: document.querySelector("#calibrationStage"),
   calibrationGrid: document.querySelector("#calibrationGrid"),
   calibrationStatus: document.querySelector("#calibrationStatus"),
@@ -133,6 +136,7 @@ async function startDetection() {
       logDebug("WebGazer camera callback fired.");
     });
     showWebGazerFeedback(window.webgazer);
+    reportCameraTrack();
     logDebug(`begin ok. ready=${Boolean(window.webgazer.isReady?.())}`);
 
     state.webgazerActive = true;
@@ -166,7 +170,12 @@ function configureWebGazer(gaze) {
   gaze.setGazeListener?.((data) => {
     if (!data || typeof data.x !== "number" || typeof data.y !== "number") return;
     state.lastGazeAt = Date.now();
-    el.gazeStatus.textContent = "receiving";
+    state.realGazeSamples += 1;
+    el.gazeStatus.textContent = `receiving (${state.realGazeSamples})`;
+    el.lastGazeStatus.textContent = `${Math.round(data.x)}, ${Math.round(data.y)}`;
+    if (state.realGazeSamples <= 5 || state.realGazeSamples % 25 === 0) {
+      logDebug(`real gaze sample #${state.realGazeSamples}: ${Math.round(data.x)},${Math.round(data.y)}`);
+    }
     addSample(data.x, data.y, "gaze");
   });
 }
@@ -177,6 +186,26 @@ function showWebGazerFeedback(gaze) {
   gaze.showFaceOverlay?.(true);
   gaze.showFaceFeedbackBox?.(true);
   gaze.showPredictionPoints?.(true);
+}
+
+function reportCameraTrack() {
+  const video = document.querySelector("#webgazerVideoFeed");
+  const stream = video?.srcObject;
+  const track = stream?.getVideoTracks?.()[0];
+
+  if (!track) {
+    el.cameraTrackStatus.textContent = "no video track";
+    logDebug("cameraTrack=none");
+    return;
+  }
+
+  const settings = track.getSettings?.() || {};
+  const size = settings.width && settings.height ? `${settings.width}x${settings.height}` : "unknown size";
+  const facing = settings.facingMode ? ` ${settings.facingMode}` : "";
+  const label = track.label || "camera label hidden";
+  const trackText = `${label} / ${size}${facing}`;
+  el.cameraTrackStatus.textContent = trackText;
+  logDebug(`cameraTrack=${trackText}`);
 }
 
 function openPointerFallback() {

@@ -7,10 +7,10 @@
     <title>UNO Gaze Heat Region</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=7" />
+    <link rel="stylesheet" href="./styles.css?v=8" />
     <script defer src="https://cdn.jsdelivr.net/npm/webgazer@3.5.3/dist/webgazer.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-    <script defer src="./app.js?v=7"></script>
+    <script defer src="./app.js?v=8"></script>
   </head>
   <body>
     <header class="top-bar">
@@ -37,7 +37,7 @@
             </p>
             <div class="actions">
               <button class="primary-button" id="startDetectionButton" type="button">Start detection</button>
-              <button class="secondary-button" id="openFallbackButton" type="button">Use pointer fallback</button>
+              <button class="secondary-button" id="openFallbackButton" type="button">Demo fallback only</button>
             </div>
             <p class="status-note" id="introStatus">
               Camera gaze requires HTTPS and camera permission. Fallback only tests heatmap and screenshot mechanics.
@@ -89,9 +89,11 @@
             </p>
             <div class="calibration-stats">
               <div><span>Camera</span><strong id="cameraStatus">waiting</strong></div>
+              <div><span>Video track</span><strong id="cameraTrackStatus">not connected</strong></div>
               <div><span>Point</span><strong id="calibrationPointStatus">0 / 9</strong></div>
               <div><span>Samples</span><strong id="calibrationSampleStatus">0</strong></div>
               <div><span>Gaze output</span><strong id="gazeStatus">waiting</strong></div>
+              <div><span>Last gaze</span><strong id="lastGazeStatus">--</strong></div>
             </div>
             <button class="secondary-button" id="skipCalibrationButton" type="button">Skip to heatmap</button>
           </aside>
