@@ -1,53 +1,56 @@
-# 眼动热区验证 PWA 原型
+# Gaze heat region PWA prototype
 
-## Direction Guardrail 核查
+## Direction Guardrail
 
-- 当前实现是否触碰系统性 / 结构性风险：`不触碰`
-- 风险出现在哪里：
-  - 如果加入跨 APP 后台读屏、自动识别所有内容、OCR / AI 上传，就会变成系统级监测方案。
-  - 如果同时接入手环、眼镜、恢复流程和长期数据中心，就会回到多模块支持结构。
-- 当前收紧方式：
-  - 单一主要载体：`Android 手机浏览器 / PWA`
-  - 单一验证对象：`当前受控网页内的眼动热区`
-  - 单一闭环：`camera gaze sample -> heatmap -> ROI box -> ROI screenshot`
-  - 明确不做：`OCR`、`AI 上传`、`Recovery Card`、`60 秒呼吸`、`Recovery Check`、`跨 APP 截屏`
+- Current direction touches systemic / structural risk: `no`.
+- Risk would appear if the prototype expands into cross-app screenshots, background screen reading, OCR, AI upload, or continuous monitoring.
+- Current scope stays as one controlled PWA loop: `GazeCloud gaze sample -> validation -> heatmap -> ROI screenshot`.
 
-## 当前交付
+## Current delivery
 
-- `prototype/index.html`
-- `prototype/styles.css`
-- `prototype/app.js`
-- `prototype/manifest.webmanifest`
-- `prototype/service-worker.js`
+- `index.html`
+- `styles.css`
+- `app.js`
+- `manifest.webmanifest`
+- `service-worker.js`
+- `assets/`
 
-## 原型功能
+## Prototype behavior
 
-1. `Screen 1 / Feed`：打开后先看到多信息页面，用来模拟当前网页内的信息环境。
-2. `Screen 2 / WebGazer calibration`：点击 `Start detection` 后启动 WebGazer，显示 camera video、face overlay、face feedback box 和 9 个校准点。
-3. `Calibration data`：每个高亮点调用 WebGazer 的 `recordScreenPosition(x, y, "click")`，把当前点作为已知屏幕坐标写入 WebGazer 回归模型。
-4. `Screen 3 / Heat capture`：校准完成后，同一个 WebGazer `setGazeListener` 输出 gaze point，热区页把这些点映射到 `12 x 20` 网格。
-5. `ROI Screenshot`：自动找到最高热区 cluster，外扩 `24px`，用 html2canvas 截当前页面 ROI，生成预览图和 `Download PNG`。
-6. `Simulation fallback`：摄像头不可用时，用 pointer / touch 验证 heatmap 和截图链路，UI 会标明这是 fallback。
+1. `Screen 1 / Feed`: opens on a dense controlled information page.
+2. `Screen 2 / GazeCloud calibration`: `Start detection` loads `GazeCloudAPI.StartEyeTracking()`.
+3. `GazeCloud data`: `GazeCloudAPI.OnResult` reads `GazeData.state`, `GazeData.docX`, and `GazeData.docY`.
+4. `Target validation`: after GazeCloud calibration, the page runs 5 validation points. Heatmap capture starts only if gaze predictions follow the targets.
+5. `Screen 3 / Heat capture`: validated gaze samples map into a `12 x 20` heat grid.
+6. `ROI screenshot`: the strongest heat cluster is expanded by `24px`, then html2canvas captures that current-page ROI and exports a PNG.
+7. `Pointer demo`: pointer/touch remains available only to test heatmap and screenshot mechanics. It does not validate eye tracking.
 
-## 快速打开
+## Important GazeCloud note
 
-直接打开 `prototype/index.html` 可以用鼠标 / 触摸模拟热区与截图。
-
-摄像头 / WebGazer 需要浏览器安全上下文：`https://` 或 `localhost`。如果只用文件方式打开，前摄权限通常不可用，但 pointer / touch simulation 仍可验证热区和截图链路。
-
-## 推荐验证路线
+GazeCloud requires HTTPS and may require registering the page origin:
 
 ```text
-Android Chrome 打开 HTTPS 页面
--> Start detection
--> WebGazer video / face overlay / face feedback box 显示
--> 看着高亮点完成 9 点 WebGazer calibration
--> 自动进入 heat capture 页面
--> 注视测试画面中的一个区域
--> heatmap 形成热点
--> ROI box 覆盖热点
--> Capture hot region
--> 预览并下载 PNG
+https://api.gazerecorder.com/register/
 ```
 
-当前截图只来自本 PWA 的受控页面，不尝试截取其他 APP。
+For GitHub Pages, register:
+
+```text
+https://be139.github.io
+```
+
+## Recommended test flow
+
+```text
+Android Chrome opens the HTTPS page
+-> Start detection
+-> Complete the GazeCloud camera calibration overlay
+-> Look at the 5 validation points on this page
+-> Only if validation passes, enter the heat capture page
+-> Look at one content region for a few seconds
+-> Heatmap and ROI box appear
+-> Capture hot region
+-> Preview and download PNG
+```
+
+The screenshot only comes from this PWA page. The prototype does not capture other apps and does not include OCR or AI upload.

@@ -3,10 +3,6 @@ const GRID_ROWS = 20;
 const ROI_PADDING = 24;
 const SAMPLE_DECAY = 0.996;
 const SAMPLE_LIMIT = 1200;
-const CALIBRATION_HOLD_MS = 1800;
-const CALIBRATION_RECORD_EVERY_MS = 180;
-const CALIBRATION_EVENT_TYPE = "click";
-const CAMERA_TRACK_TIMEOUT_MS = 6500;
 const VALIDATION_POINTS = [
   { x: 50, y: 50 },
   { x: 10, y: 10 },
@@ -16,19 +12,7 @@ const VALIDATION_POINTS = [
 ];
 const VALIDATION_HOLD_MS = 1900;
 const VALIDATION_WARMUP_MS = 420;
-const MEDIAPIPE_FACE_MESH_PATH = "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh";
-const BUILD_VERSION = "2026-05-03-v12";
-const CALIBRATION_POINTS = [
-  { x: 10, y: 10 },
-  { x: 50, y: 10 },
-  { x: 90, y: 10 },
-  { x: 15, y: 50 },
-  { x: 50, y: 50 },
-  { x: 85, y: 50 },
-  { x: 10, y: 78 },
-  { x: 50, y: 78 },
-  { x: 90, y: 78 },
-];
+const BUILD_VERSION = "2026-05-03-v13";
 
 const regionLabels = {
   work: "Work signal",
@@ -47,7 +31,8 @@ const state = {
   lastPoint: null,
   roi: null,
   renderQueued: false,
-  webgazerActive: false,
+  trackerActive: false,
+  cloudCalibrationComplete: false,
   lastGazeAt: 0,
   calibrationIndex: 0,
   calibrationTotalSamples: 0,
@@ -136,66 +121,78 @@ function switchScreen(screen) {
 
 async function startDetection() {
   el.startDetectionButton.disabled = true;
-  el.introStatus.textContent = "Requesting camera permission and starting WebGazer...";
+  el.introStatus.textContent = "Requesting camera permission and starting GazeCloudAPI...";
   el.cameraStatus.textContent = "requesting";
   logDebug(`Start detection. build=${BUILD_VERSION}`);
   logDebug(`secure=${window.isSecureContext} protocol=${window.location.protocol}`);
-  logDebug(`cameraAPI=${Boolean(navigator.mediaDevices?.getUserMedia)} webgazer=${Boolean(window.webgazer)}`);
+  logDebug(`cameraAPI=${Boolean(navigator.mediaDevices?.getUserMedia)} gazeCloud=${Boolean(window.GazeCloudAPI)}`);
 
   try {
-    if (!window.webgazer) throw new Error("WebGazer script is not loaded");
+    if (!window.GazeCloudAPI) throw new Error("GazeCloudAPI script is not loaded");
 
-    configureWebGazer(window.webgazer);
-    logDebug(`faceMeshPath=${window.webgazer.params?.faceMeshSolutionPath || "unknown"}`);
-    await window.webgazer.begin(() => {
-      console.warn("WebGazer camera stream callback fired before initialization completed.");
-      logDebug("WebGazer camera callback fired.");
-    });
-    showWebGazerFeedback(window.webgazer);
-    await waitForCameraTrack();
-    const trackInfo = reportCameraTrack();
-    if (trackInfo.isVirtual) {
-      throw new Error(`Virtual camera detected: ${trackInfo.label}. Use Android Chrome with the real front camera.`);
-    }
-    logDebug(`begin ok. ready=${Boolean(window.webgazer.isReady?.())}`);
-
-    state.webgazerActive = true;
-    state.source = "gaze";
+    configureGazeCloud(window.GazeCloudAPI);
+    state.trackerActive = true;
+    state.source = "waiting";
     state.gazeValidated = false;
-    el.cameraStatus.textContent = "active";
+    state.cloudCalibrationComplete = false;
+    el.cameraStatus.textContent = "starting";
+    el.cameraTrackStatus.textContent = "GazeCloudAPI";
     el.gazeStatus.textContent = "waiting";
     el.signalDot.classList.add("is-live");
-    el.trackingStatus.textContent = "Camera active, gaze not validated";
-    el.cameraNote.textContent = "WebGazer is active, but heatmap capture waits until validation passes.";
+    el.trackingStatus.textContent = "GazeCloud starting";
+    el.cameraNote.textContent = "GazeCloudAPI calibration is active. Heatmap capture waits until validation passes.";
     switchScreen("calibration");
     beginCalibration();
+    window.GazeCloudAPI.StartEyeTracking();
   } catch (error) {
     state.source = "waiting";
-    state.webgazerActive = false;
-    stopWebGazerQuietly();
+    state.trackerActive = false;
+    stopTrackingQuietly();
     el.startDetectionButton.disabled = false;
-    const virtualCamera = /Virtual camera detected/i.test(error.message);
-    el.cameraStatus.textContent = virtualCamera ? "virtual rejected" : "unavailable";
-    el.introStatus.textContent = virtualCamera
-      ? `${error.message} This prototype requires a real phone front camera.`
-      : `Camera unavailable: ${error.message}. You can still test pointer fallback.`;
+    el.cameraStatus.textContent = "unavailable";
+    el.introStatus.textContent = `GazeCloud unavailable: ${error.message}. You can still test pointer demo.`;
     logDebug(`ERROR ${error.name || "Error"}: ${error.message}`);
     if (error.stack) logDebug(error.stack.split("\n").slice(0, 4).join(" | "));
     console.warn(error);
   }
 }
 
-function configureWebGazer(gaze) {
-  if (gaze.params) {
-    gaze.params.faceMeshSolutionPath = MEDIAPIPE_FACE_MESH_PATH;
+function configureGazeCloud(gaze) {
+  gaze.UseClickRecalibration = true;
+  gaze.OnResult = handleGazeCloudResult;
+  gaze.OnCalibrationComplete = () => {
+    if (state.validationActive || state.gazeValidated || state.screen !== "calibration") return;
+    logDebug("GazeCloud calibration complete.");
+    state.cloudCalibrationComplete = true;
+    el.cameraStatus.textContent = "active";
+    el.calibrationStatus.textContent = "GazeCloud calibration complete. Starting 5-point validation.";
+    window.setTimeout(() => beginValidation(), 500);
+  };
+  gaze.OnCamDenied = () => failTracking("Camera access denied by the browser.");
+  gaze.OnError = (message) => failTracking(message || "GazeCloudAPI returned an error.");
+}
+
+function handleGazeCloudResult(gazeData) {
+  if (!gazeData) return;
+
+  if (gazeData.state !== 0) {
+    const stateText = gazeData.state === -1 ? "face lost" : "uncalibrated";
+    el.gazeStatus.textContent = stateText;
+    if (state.validationActive) {
+      el.calibrationStatus.textContent = `Validation paused: ${stateText}. Keep a live face centered and continue looking at the dot.`;
+    }
+    return;
   }
 
-  gaze.setRegression?.("ridge");
-  gaze.saveDataAcrossSessions?.(false);
-  gaze.setGazeListener?.((data) => {
-    if (!data || typeof data.x !== "number" || typeof data.y !== "number") return;
-    handleGazePrediction(data.x, data.y);
-  });
+  const clientX = Number(gazeData.docX) - window.scrollX;
+  const clientY = Number(gazeData.docY) - window.scrollY;
+  if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
+  if (!state.cloudCalibrationComplete && state.screen === "calibration" && !state.validationActive) {
+    state.cloudCalibrationComplete = true;
+    logDebug("GazeCloud produced valid gaze before calibration callback; starting validation.");
+    beginValidation();
+  }
+  handleGazePrediction(clientX, clientY);
 }
 
 function handleGazePrediction(clientX, clientY) {
@@ -216,62 +213,23 @@ function handleGazePrediction(clientX, clientY) {
   }
 }
 
-function showWebGazerFeedback(gaze) {
-  gaze.setVideoViewerSize?.(320, 240);
-  gaze.showVideo?.(true);
-  gaze.showFaceOverlay?.(true);
-  gaze.showFaceFeedbackBox?.(true);
-  gaze.showPredictionPoints?.(true);
+function failTracking(message) {
+  state.source = "waiting";
+  state.trackerActive = false;
+  state.validationActive = false;
+  state.gazeValidated = false;
+  stopTrackingQuietly();
+  el.startDetectionButton.disabled = false;
+  el.cameraStatus.textContent = "unavailable";
+  el.gazeStatus.textContent = "error";
+  el.introStatus.textContent = `GazeCloud unavailable: ${message}`;
+  el.calibrationStatus.textContent = `GazeCloud error: ${message}`;
+  logDebug(`GazeCloud error: ${message}`);
 }
 
-async function waitForCameraTrack() {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < CAMERA_TRACK_TIMEOUT_MS) {
-    const track = getWebGazerVideoTrack();
-    if (track) {
-      logDebug("cameraTrack exposed by WebGazer.");
-      return track;
-    }
-    await delay(120);
-  }
-
-  throw new Error("WebGazer did not expose a real camera video track. Check camera permission and use Android Chrome.");
-}
-
-function getWebGazerVideoTrack() {
-  const video = document.querySelector("#webgazerVideoFeed");
-  const stream = video?.srcObject;
-  return stream?.getVideoTracks?.()[0] || null;
-}
-
-function reportCameraTrack() {
-  const track = getWebGazerVideoTrack();
-
-  if (!track) {
-    el.cameraTrackStatus.textContent = "no video track";
-    logDebug("cameraTrack=none");
-    return { isVirtual: false, label: "none" };
-  }
-
-  const settings = track.getSettings?.() || {};
-  const size = settings.width && settings.height ? `${settings.width}x${settings.height}` : "unknown size";
-  const facing = settings.facingMode ? ` ${settings.facingMode}` : "";
-  const label = track.label || "camera label hidden";
-  const trackText = `${label} / ${size}${facing}`;
-  const isVirtual = isVirtualCameraTrack(label, settings);
-  el.cameraTrackStatus.textContent = trackText;
-  logDebug(`cameraTrack=${trackText}${isVirtual ? " [virtual rejected]" : ""}`);
-  return { isVirtual, label, settings };
-}
-
-function isVirtualCameraTrack(label, settings = {}) {
-  const haystack = [label, settings.deviceId, settings.groupId].filter(Boolean).join(" ");
-  return /fake|virtual|obs|manycam|snap camera|xsplit|droidcam|ivcam/i.test(haystack);
-}
-
-function stopWebGazerQuietly() {
+function stopTrackingQuietly() {
   try {
-    window.webgazer?.end?.();
+    window.GazeCloudAPI?.StopEyeTracking?.();
   } catch (error) {
     console.warn(error);
   }
@@ -279,7 +237,7 @@ function stopWebGazerQuietly() {
 
 function openPointerFallback() {
   state.source = "simulation";
-  state.webgazerActive = false;
+  state.trackerActive = false;
   el.signalDot.classList.remove("is-live");
   el.trackingStatus.textContent = "Pointer / touch simulation active";
   el.cameraNote.textContent = "Fallback mode: pointer and touch samples test only heatmap and ROI capture mechanics.";
@@ -290,74 +248,16 @@ function beginCalibration() {
   clearCalibrationTimers();
   state.validationActive = false;
   state.gazeValidated = false;
+  state.cloudCalibrationComplete = false;
   state.calibrationIndex = 0;
   state.calibrationTotalSamples = 0;
   state.calibrationPointSamples = 0;
   el.calibrationGrid.innerHTML = "";
   el.calibrationProgress.style.width = "0%";
-  el.calibrationStatus.textContent = "Calibration: look at the highlighted dot. Do not tap the points.";
-  el.calibrationPointStatus.textContent = "0 / 9";
+  el.calibrationStatus.textContent = "GazeCloud calibration is running in its own camera overlay. Complete it there, then this page will run 5-point validation.";
+  el.calibrationPointStatus.textContent = "GazeCloud";
   el.calibrationSampleStatus.textContent = "0";
   el.gazeStatus.textContent = state.realGazeSamples ? `receiving (${state.realGazeSamples})` : "waiting";
-
-  CALIBRATION_POINTS.forEach((pointConfig, index) => {
-    const point = document.createElement("span");
-    point.className = "calibration-point";
-    point.setAttribute("aria-label", `calibration point ${index + 1}`);
-    point.style.left = `${pointConfig.x}%`;
-    point.style.top = `${pointConfig.y}%`;
-    point.dataset.index = String(index);
-    el.calibrationGrid.appendChild(point);
-  });
-
-  advanceCalibrationPoint();
-}
-
-function advanceCalibrationPoint() {
-  clearCalibrationTimers();
-
-  if (state.calibrationIndex >= CALIBRATION_POINTS.length) {
-    el.calibrationProgress.style.width = "100%";
-    el.calibrationPointStatus.textContent = "9 / 9";
-    el.calibrationStatus.textContent = "Calibration complete. Starting gaze validation before heatmap capture.";
-    window.setTimeout(() => beginValidation(), 550);
-    return;
-  }
-
-  const point = CALIBRATION_POINTS[state.calibrationIndex];
-  const pointNode = el.calibrationGrid.querySelector(`[data-index="${state.calibrationIndex}"]`);
-  const pointNumber = state.calibrationIndex + 1;
-  state.calibrationPointSamples = 0;
-
-  el.calibrationGrid.querySelectorAll(".calibration-point").forEach((node) => node.classList.remove("is-active"));
-  pointNode?.classList.add("is-active");
-  el.calibrationProgress.style.width = `${(state.calibrationIndex / CALIBRATION_POINTS.length) * 100}%`;
-  el.calibrationPointStatus.textContent = `${pointNumber} / ${CALIBRATION_POINTS.length}`;
-  el.calibrationSampleStatus.textContent = String(state.calibrationTotalSamples);
-  el.calibrationStatus.textContent = `Point ${pointNumber}: look at the highlighted dot. WebGazer records known-point samples.`;
-
-  state.calibrationRecorder = window.setInterval(() => {
-    recordCalibrationSample(point.x, point.y);
-  }, CALIBRATION_RECORD_EVERY_MS);
-
-  state.calibrationTimeout = window.setTimeout(() => {
-    pointNode?.classList.remove("is-active");
-    pointNode?.classList.add("is-done");
-    state.calibrationIndex += 1;
-    el.calibrationProgress.style.width = `${(state.calibrationIndex / CALIBRATION_POINTS.length) * 100}%`;
-    advanceCalibrationPoint();
-  }, CALIBRATION_HOLD_MS);
-}
-
-function recordCalibrationSample(percentX, percentY) {
-  const { screenX, screenY } = getStagePointScreenPosition(percentX, percentY);
-
-  if (window.webgazer?.recordScreenPosition) {
-    window.webgazer.recordScreenPosition(screenX, screenY, CALIBRATION_EVENT_TYPE);
-    state.calibrationPointSamples += 1;
-    state.calibrationTotalSamples += 1;
-    el.calibrationSampleStatus.textContent = `${state.calibrationTotalSamples} (${state.calibrationPointSamples} on current)`;
-  }
 }
 
 function beginValidation() {
@@ -404,7 +304,7 @@ function advanceValidationPoint() {
   el.calibrationProgress.style.width = `${(state.validationIndex / VALIDATION_POINTS.length) * 100}%`;
   el.calibrationPointStatus.textContent = `${pointNumber} / ${VALIDATION_POINTS.length}`;
   el.calibrationSampleStatus.textContent = "0 validation";
-  el.calibrationStatus.textContent = `Validation ${pointNumber}: look at the highlighted dot. The app is checking whether WebGazer follows your gaze.`;
+  el.calibrationStatus.textContent = `Validation ${pointNumber}: look at the highlighted dot. The app is checking whether GazeCloud follows your gaze.`;
 
   state.calibrationTimeout = window.setTimeout(() => {
     const result = scoreValidationPoint(state.validationCurrentSamples);
@@ -465,7 +365,7 @@ function finishValidation() {
     state.source = "waiting";
     el.gazeStatus.textContent = `failed (${passedPoints}/${VALIDATION_POINTS.length})`;
     el.trackingStatus.textContent = "Gaze validation failed";
-    el.cameraNote.textContent = "WebGazer predictions did not match validation targets. This run is not reliable for heatmap capture.";
+    el.cameraNote.textContent = "GazeCloud predictions did not match validation targets. This run is not reliable for heatmap capture.";
     el.calibrationStatus.textContent = "Validation failed: predictions did not follow the target points. Retry with a live face, stable phone, and better lighting.";
     logDebug(`validation failed. passed=${passedPoints}/${VALIDATION_POINTS.length} mean=${Number.isFinite(meanError) ? Math.round(meanError) : "none"} threshold=${Math.round(threshold)}`);
     return;
@@ -476,7 +376,7 @@ function finishValidation() {
   resetHeat();
   el.gazeStatus.textContent = `validated (${passedPoints}/${VALIDATION_POINTS.length})`;
   el.trackingStatus.textContent = "Validated camera gaze active";
-  el.cameraNote.textContent = "Gaze validation passed. Heatmap now uses WebGazer predictions from this page only.";
+  el.cameraNote.textContent = "Gaze validation passed. Heatmap now uses GazeCloud predictions from this page only.";
   el.calibrationStatus.textContent = "Validation passed. Moving to heatmap capture.";
   logDebug(`validation passed. passed=${passedPoints}/${VALIDATION_POINTS.length} mean=${Math.round(meanError)} threshold=${Math.round(threshold)}`);
   window.setTimeout(() => switchScreen("capture"), 700);
@@ -510,24 +410,22 @@ function skipCalibration() {
   clearCalibrationTimers();
   state.validationActive = false;
   state.gazeValidated = false;
-  if (state.webgazerActive) {
-    beginCalibration();
-    return;
-  }
-
-  switchScreen("intro");
+  stopTrackingQuietly();
+  state.trackerActive = false;
+  state.cloudCalibrationComplete = false;
+  el.startDetectionButton.disabled = false;
+  startDetection();
 }
 
 function recalibrate() {
-  if (state.webgazerActive) {
+  if (state.trackerActive) {
     state.gazeValidated = false;
-    switchScreen("calibration");
-    beginCalibration();
+    skipCalibration();
     return;
   }
 
   switchScreen("intro");
-  el.introStatus.textContent = "Start detection first to run WebGazer calibration.";
+  el.introStatus.textContent = "Start detection first to run GazeCloud calibration.";
 }
 
 function getSurfacePoint(clientX, clientY) {
@@ -603,7 +501,7 @@ function moveGazeDot(clientX, clientY, source) {
 }
 
 function handlePointerSample(event) {
-  if (state.webgazerActive && state.source !== "simulation") return;
+  if (state.trackerActive && state.source !== "simulation") return;
   addSample(event.clientX, event.clientY, "simulation");
 }
 
@@ -847,7 +745,7 @@ el.resetButton.addEventListener("click", resetHeat);
 el.captureButton.addEventListener("click", captureHotRegion);
 window.addEventListener("resize", () => renderHeatmap());
 window.setInterval(() => {
-  if (state.webgazerActive && Date.now() - state.lastGazeAt > 1800 && state.screen === "capture") {
+  if (state.trackerActive && Date.now() - state.lastGazeAt > 1800 && state.screen === "capture") {
     el.gazeStatus.textContent = "waiting";
   }
 }, 1000);

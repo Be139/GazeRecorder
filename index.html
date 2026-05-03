@@ -7,15 +7,15 @@
     <title>UNO Gaze Heat Region</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=12" />
-    <script defer src="https://cdn.jsdelivr.net/npm/webgazer@3.5.3/dist/webgazer.min.js"></script>
+    <link rel="stylesheet" href="./styles.css?v=13" />
+    <script defer src="https://api.gazerecorder.com/GazeCloudAPI.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-    <script defer src="./app.js?v=12"></script>
+    <script defer src="./app.js?v=13"></script>
   </head>
   <body>
     <header class="top-bar">
       <div>
-        <p class="eyebrow">UNO / WebGazer feasibility prototype</p>
+        <p class="eyebrow">UNO / GazeCloud feasibility prototype</p>
         <h1>Gaze Heat Region</h1>
       </div>
       <div class="step-indicator" aria-label="prototype steps">
@@ -32,7 +32,7 @@
             <p class="eyebrow">controlled information page</p>
             <h2>先在一个多信息页面里验证眼动是否能工作。</h2>
             <p>
-              这个版本只测试当前网页内的 WebGazer 摄像头检测、九点校准、热区生成和 ROI 截图。
+              这个版本只测试当前网页内的 GazeCloudAPI 摄像头眼动、目标点验证、热区生成和 ROI 截图。
               不做 OCR、AI 上传、跨 APP 截图或后台摄像头。
             </p>
             <div class="actions">
@@ -78,18 +78,18 @@
         </div>
       </section>
 
-      <section class="screen" id="calibrationScreen" data-screen="calibration" aria-label="WebGazer calibration">
+      <section class="screen" id="calibrationScreen" data-screen="calibration" aria-label="GazeCloud calibration">
         <div class="calibration-layout">
           <aside class="calibration-panel">
-            <p class="eyebrow">WebGazer calibration</p>
-            <h2>看着高亮点，等待它自动进入下一点。</h2>
+            <p class="eyebrow">GazeCloud calibration</p>
+            <h2>先完成 GazeCloud 校准，再看本页验证点。</h2>
             <p>
-              页面会先用 <code>recordScreenPosition(x, y, "click")</code> 做 WebGazer 校准，再用 5 个目标点检查预测是否跟随视线。
+              页面会调用 <code>GazeCloudAPI.StartEyeTracking()</code>，通过 <code>OnResult</code> 读取 <code>docX/docY/state</code>。
             </p>
             <div class="calibration-stats">
               <div><span>Camera</span><strong id="cameraStatus">waiting</strong></div>
-              <div><span>Video track</span><strong id="cameraTrackStatus">not connected</strong></div>
-              <div><span>Point</span><strong id="calibrationPointStatus">0 / 9</strong></div>
+              <div><span>Tracker</span><strong id="cameraTrackStatus">not connected</strong></div>
+              <div><span>Stage</span><strong id="calibrationPointStatus">waiting</strong></div>
               <div><span>Samples</span><strong id="calibrationSampleStatus">0</strong></div>
               <div><span>Gaze output</span><strong id="gazeStatus">waiting</strong></div>
               <div><span>Last gaze</span><strong id="lastGazeStatus">--</strong></div>
@@ -148,7 +148,7 @@
               </div>
 
               <div class="status-note" id="cameraNote">
-                Validated WebGazer gaze samples will draw the heatmap. Pointer movement is demo only.
+                Validated GazeCloud gaze samples will draw the heatmap. Pointer movement is demo only.
               </div>
 
               <div class="test-surface" id="captureSurface">

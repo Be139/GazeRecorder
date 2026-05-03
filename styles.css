@@ -40,62 +40,6 @@ body.is-capturing .gaze-dot {
   visibility: hidden;
 }
 
-body.is-capturing #webgazerVideoContainer,
-body.is-capturing #webgazerGazeDot {
-  visibility: hidden !important;
-}
-
-#webgazerVideoContainer {
-  pointer-events: none !important;
-  z-index: 80 !important;
-  border-radius: 8px !important;
-  overflow: hidden !important;
-  box-shadow: 0 18px 48px rgba(9, 15, 12, 0.24) !important;
-  background: #111814 !important;
-}
-
-body[data-screen="calibration"] #webgazerVideoContainer {
-  display: block !important;
-  opacity: 1 !important;
-  position: fixed !important;
-  top: auto !important;
-  left: auto !important;
-  right: max(10px, env(safe-area-inset-right)) !important;
-  bottom: max(12px, env(safe-area-inset-bottom)) !important;
-  width: min(112px, 28vw) !important;
-  height: min(84px, 21vw) !important;
-}
-
-body:not([data-screen="calibration"]) #webgazerVideoContainer {
-  opacity: 0 !important;
-}
-
-#webgazerVideoFeed,
-#webgazerFaceOverlay,
-#webgazerFaceFeedbackBox {
-  width: 100% !important;
-  height: 100% !important;
-}
-
-#webgazerFaceOverlay,
-#webgazerFaceFeedbackBox {
-  inset: 0 !important;
-}
-
-#webgazerFaceFeedbackBox {
-  border-width: 3px !important;
-  box-shadow: 0 0 0 999px rgba(10, 18, 14, 0.12) !important;
-}
-
-#webgazerGazeDot {
-  z-index: 90 !important;
-  pointer-events: none !important;
-}
-
-body[data-screen="intro"] #webgazerGazeDot {
-  display: none !important;
-}
-
 button {
   border: 0;
   border-radius: 999px;
