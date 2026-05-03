@@ -57,6 +57,10 @@
             </div>
           </div>
 
+          <div class="status-note" id="cameraNote">
+            Camera gaze requires HTTPS and permission. Pointer simulation is only a fallback for testing heatmap and ROI capture.
+          </div>
+
           <div class="test-surface" id="captureSurface">
             <div class="test-content">
               <article class="test-tile tile-work" data-region="work">
@@ -114,11 +118,16 @@
 
     <section class="calibration" id="calibration" aria-hidden="true">
       <div class="calibration-copy">
-        <p class="eyebrow">quick calibration</p>
-        <h2>Tap each point once</h2>
-        <p>Calibration only trains the camera gaze proxy. Pointer simulation stays available.</p>
+        <p class="eyebrow">WebGazer calibration</p>
+        <h2>Look at the active dot while WebGazer records it.</h2>
+        <p id="calibrationStatus">This uses WebGazer's recordScreenPosition API with known screen points.</p>
       </div>
-      <div class="calibration-grid" id="calibrationGrid"></div>
+      <div class="calibration-stage" id="calibrationStage">
+        <div class="calibration-grid" id="calibrationGrid"></div>
+        <div class="calibration-progress" aria-hidden="true">
+          <span id="calibrationProgress"></span>
+        </div>
+      </div>
       <button class="secondary-button" id="skipCalibrationButton" type="button">Skip calibration</button>
     </section>
   </body>
