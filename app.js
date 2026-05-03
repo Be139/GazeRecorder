@@ -6,6 +6,7 @@ const SAMPLE_LIMIT = 1200;
 const CALIBRATION_HOLD_MS = 1800;
 const CALIBRATION_RECORD_EVERY_MS = 180;
 const CALIBRATION_EVENT_TYPE = "click";
+const MEDIAPIPE_FACE_MESH_PATH = "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh";
 const CALIBRATION_POINTS = [
   { x: 15, y: 15 },
   { x: 50, y: 15 },
@@ -120,22 +121,11 @@ async function startDetection() {
   try {
     if (!window.webgazer) throw new Error("WebGazer script is not loaded");
 
-    await window.webgazer
-      .setRegression("ridge")
-      .setGazeListener((data) => {
-        if (!data || typeof data.x !== "number" || typeof data.y !== "number") return;
-        state.lastGazeAt = Date.now();
-        el.gazeStatus.textContent = "receiving";
-        addSample(data.x, data.y, "gaze");
-      })
-      .saveDataAcrossSessions(false)
-      .begin();
-
-    window.webgazer.setVideoViewerSize?.(320, 240);
-    window.webgazer.showVideo(true);
-    window.webgazer.showFaceOverlay(true);
-    window.webgazer.showFaceFeedbackBox(true);
-    window.webgazer.showPredictionPoints(true);
+    configureWebGazer(window.webgazer);
+    await window.webgazer.begin(() => {
+      console.warn("WebGazer camera stream callback fired before initialization completed.");
+    });
+    showWebGazerFeedback(window.webgazer);
 
     state.webgazerActive = true;
     state.source = "gaze";
@@ -154,6 +144,29 @@ async function startDetection() {
     el.introStatus.textContent = `Camera unavailable: ${error.message}. You can still test pointer fallback.`;
     console.warn(error);
   }
+}
+
+function configureWebGazer(gaze) {
+  if (gaze.params) {
+    gaze.params.faceMeshSolutionPath = MEDIAPIPE_FACE_MESH_PATH;
+  }
+
+  gaze.setRegression?.("ridge");
+  gaze.saveDataAcrossSessions?.(false);
+  gaze.setGazeListener?.((data) => {
+    if (!data || typeof data.x !== "number" || typeof data.y !== "number") return;
+    state.lastGazeAt = Date.now();
+    el.gazeStatus.textContent = "receiving";
+    addSample(data.x, data.y, "gaze");
+  });
+}
+
+function showWebGazerFeedback(gaze) {
+  gaze.setVideoViewerSize?.(320, 240);
+  gaze.showVideo?.(true);
+  gaze.showFaceOverlay?.(true);
+  gaze.showFaceFeedbackBox?.(true);
+  gaze.showPredictionPoints?.(true);
 }
 
 function openPointerFallback() {
