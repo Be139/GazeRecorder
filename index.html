@@ -7,10 +7,10 @@
     <title>UNO Gaze Heat Region</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=14" />
+    <link rel="stylesheet" href="./styles.css?v=15" />
     <script defer src="https://api.gazerecorder.com/GazeCloudAPI.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-    <script defer src="./app.js?v=14"></script>
+    <script defer src="./app.js?v=15"></script>
   </head>
   <body>
     <header class="top-bar">
@@ -183,6 +183,62 @@
           </section>
 
           <aside class="side-panel" aria-label="heat region inspector">
+            <section class="panel-section sensitivity-panel" aria-label="sensitivity controls">
+              <div class="panel-heading">
+                <div>
+                  <p class="label">Sensitivity</p>
+                  <h2>Capture tuning</h2>
+                </div>
+                <span class="preset-badge" id="activePresetLabel">medium</span>
+              </div>
+
+              <div class="segmented-control" aria-label="sensitivity presets">
+                <button type="button" data-preset="low" aria-pressed="false">Low</button>
+                <button type="button" data-preset="medium" aria-pressed="true">Medium</button>
+                <button type="button" data-preset="high" aria-pressed="false">High</button>
+              </div>
+
+              <label class="toggle-row">
+                <input id="autoCaptureToggle" type="checkbox" />
+                <span>Auto capture local ROI</span>
+              </label>
+              <p class="auto-status" id="autoCaptureStatus">Auto capture is off. Manual capture stays available.</p>
+
+              <details class="advanced-controls">
+                <summary>Advanced tuning</summary>
+                <div class="control-list">
+                  <label>
+                    <span>Dwell trigger <output data-setting-output="dwellMs">1200 ms</output></span>
+                    <input data-setting="dwellMs" type="range" min="600" max="3000" step="100" value="1200" />
+                  </label>
+                  <label>
+                    <span>Stable radius <output data-setting-output="stabilityRadius">80 px</output></span>
+                    <input data-setting="stabilityRadius" type="range" min="40" max="160" step="5" value="80" />
+                  </label>
+                  <label>
+                    <span>Heat strength <output data-setting-output="heatGain">1.00x</output></span>
+                    <input data-setting="heatGain" type="range" min="0.5" max="2" step="0.05" value="1" />
+                  </label>
+                  <label>
+                    <span>Heat fade half-life <output data-setting-output="decayHalfLifeMs">4 s</output></span>
+                    <input data-setting="decayHalfLifeMs" type="range" min="1000" max="10000" step="250" value="4000" />
+                  </label>
+                  <label>
+                    <span>ROI tightness <output data-setting-output="roiThresholdRatio">58%</output></span>
+                    <input data-setting="roiThresholdRatio" type="range" min="40" max="75" step="1" value="58" />
+                  </label>
+                  <label>
+                    <span>ROI padding <output data-setting-output="roiPadding">24 px</output></span>
+                    <input data-setting="roiPadding" type="range" min="8" max="64" step="2" value="24" />
+                  </label>
+                  <label>
+                    <span>Auto cooldown <output data-setting-output="autoCaptureCooldownMs">8 s</output></span>
+                    <input data-setting="autoCaptureCooldownMs" type="range" min="3000" max="20000" step="500" value="8000" />
+                  </label>
+                </div>
+              </details>
+            </section>
+
             <section class="panel-section">
               <p class="label">Heat region</p>
               <h2 id="regionTitle">Waiting for samples</h2>

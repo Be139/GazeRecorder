@@ -711,6 +711,13 @@ body[data-screen="calibration"] #skipCalibrationButton {
   gap: 12px;
 }
 
+.panel-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .panel-section h2 {
   font-size: 22px;
 }
@@ -718,6 +725,110 @@ body[data-screen="calibration"] #skipCalibrationButton {
 .panel-section p:last-child {
   color: var(--muted);
   line-height: 1.6;
+}
+
+.preset-badge {
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(71, 121, 111, 0.12);
+  color: var(--accent-dark);
+  font-size: 12px;
+  font-weight: 760;
+  text-transform: capitalize;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(244, 246, 241, 0.86);
+}
+
+.segmented-control button {
+  min-height: 34px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.segmented-control button.is-active {
+  background: var(--accent-dark);
+  color: #ffffff;
+}
+
+.toggle-row {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--accent-dark);
+  font-weight: 760;
+}
+
+.toggle-row input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.auto-status {
+  min-height: 38px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(244, 246, 241, 0.86);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.advanced-controls {
+  border-top: 1px solid var(--line);
+}
+
+.advanced-controls summary {
+  padding: 12px 0;
+  cursor: pointer;
+  color: var(--accent-dark);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.control-list {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 4px;
+}
+
+.control-list label {
+  display: grid;
+  gap: 7px;
+}
+
+.control-list label span {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.control-list output {
+  color: var(--accent-dark);
+  white-space: nowrap;
+}
+
+.control-list input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
 }
 
 .packet-list {
