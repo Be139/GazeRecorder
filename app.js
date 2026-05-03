@@ -3,16 +3,7 @@ const GRID_ROWS = 20;
 const ROI_PADDING = 24;
 const SAMPLE_DECAY = 0.996;
 const SAMPLE_LIMIT = 1200;
-const VALIDATION_POINTS = [
-  { x: 50, y: 50 },
-  { x: 10, y: 10 },
-  { x: 90, y: 10 },
-  { x: 10, y: 78 },
-  { x: 90, y: 78 },
-];
-const VALIDATION_HOLD_MS = 1900;
-const VALIDATION_WARMUP_MS = 420;
-const BUILD_VERSION = "2026-05-03-v13";
+const BUILD_VERSION = "2026-05-03-v14";
 
 const regionLabels = {
   work: "Work signal",
@@ -34,18 +25,7 @@ const state = {
   trackerActive: false,
   cloudCalibrationComplete: false,
   lastGazeAt: 0,
-  calibrationIndex: 0,
-  calibrationTotalSamples: 0,
-  calibrationPointSamples: 0,
-  calibrationTimeout: null,
-  calibrationRecorder: null,
   realGazeSamples: 0,
-  gazeValidated: false,
-  validationActive: false,
-  validationIndex: 0,
-  validationStartedAt: 0,
-  validationCurrentSamples: [],
-  validationResults: [],
 };
 
 const el = {
@@ -133,14 +113,13 @@ async function startDetection() {
     configureGazeCloud(window.GazeCloudAPI);
     state.trackerActive = true;
     state.source = "waiting";
-    state.gazeValidated = false;
     state.cloudCalibrationComplete = false;
     el.cameraStatus.textContent = "starting";
     el.cameraTrackStatus.textContent = "GazeCloudAPI";
     el.gazeStatus.textContent = "waiting";
     el.signalDot.classList.add("is-live");
     el.trackingStatus.textContent = "GazeCloud starting";
-    el.cameraNote.textContent = "GazeCloudAPI calibration is active. Heatmap capture waits until validation passes.";
+    el.cameraNote.textContent = "GazeCloudAPI calibration is active. Heatmap starts after the API reports calibration complete.";
     switchScreen("calibration");
     beginCalibration();
     window.GazeCloudAPI.StartEyeTracking();
@@ -161,12 +140,9 @@ function configureGazeCloud(gaze) {
   gaze.UseClickRecalibration = true;
   gaze.OnResult = handleGazeCloudResult;
   gaze.OnCalibrationComplete = () => {
-    if (state.validationActive || state.gazeValidated || state.screen !== "calibration") return;
+    if (state.cloudCalibrationComplete || state.screen !== "calibration") return;
     logDebug("GazeCloud calibration complete.");
-    state.cloudCalibrationComplete = true;
-    el.cameraStatus.textContent = "active";
-    el.calibrationStatus.textContent = "GazeCloud calibration complete. Starting 5-point validation.";
-    window.setTimeout(() => beginValidation(), 500);
+    enterCaptureAfterGazeCloudCalibration();
   };
   gaze.OnCamDenied = () => failTracking("Camera access denied by the browser.");
   gaze.OnError = (message) => failTracking(message || "GazeCloudAPI returned an error.");
@@ -178,8 +154,11 @@ function handleGazeCloudResult(gazeData) {
   if (gazeData.state !== 0) {
     const stateText = gazeData.state === -1 ? "face lost" : "uncalibrated";
     el.gazeStatus.textContent = stateText;
-    if (state.validationActive) {
-      el.calibrationStatus.textContent = `Validation paused: ${stateText}. Keep a live face centered and continue looking at the dot.`;
+    if (state.screen === "calibration") {
+      el.calibrationStatus.textContent = `GazeCloud status: ${stateText}. Complete the API calibration overlay.`;
+    }
+    if (state.screen === "capture") {
+      el.cameraNote.textContent = `GazeCloud status: ${stateText}. Heatmap pauses until valid gaze resumes.`;
     }
     return;
   }
@@ -187,10 +166,9 @@ function handleGazeCloudResult(gazeData) {
   const clientX = Number(gazeData.docX) - window.scrollX;
   const clientY = Number(gazeData.docY) - window.scrollY;
   if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
-  if (!state.cloudCalibrationComplete && state.screen === "calibration" && !state.validationActive) {
-    state.cloudCalibrationComplete = true;
-    logDebug("GazeCloud produced valid gaze before calibration callback; starting validation.");
-    beginValidation();
+  if (!state.cloudCalibrationComplete && state.screen === "calibration") {
+    logDebug("GazeCloud produced valid gaze before calibration callback; entering capture.");
+    enterCaptureAfterGazeCloudCalibration();
   }
   handleGazePrediction(clientX, clientY);
 }
@@ -204,11 +182,7 @@ function handleGazePrediction(clientX, clientY) {
     logDebug(`real gaze sample #${state.realGazeSamples}: ${Math.round(clientX)},${Math.round(clientY)}`);
   }
 
-  if (state.validationActive) {
-    recordValidationPrediction(clientX, clientY);
-  }
-
-  if (state.screen === "capture" && state.gazeValidated) {
+  if (state.screen === "capture" && state.cloudCalibrationComplete) {
     addSample(clientX, clientY, "gaze");
   }
 }
@@ -216,8 +190,6 @@ function handleGazePrediction(clientX, clientY) {
 function failTracking(message) {
   state.source = "waiting";
   state.trackerActive = false;
-  state.validationActive = false;
-  state.gazeValidated = false;
   stopTrackingQuietly();
   el.startDetectionButton.disabled = false;
   el.cameraStatus.textContent = "unavailable";
@@ -246,170 +218,36 @@ function openPointerFallback() {
 
 function beginCalibration() {
   clearCalibrationTimers();
-  state.validationActive = false;
-  state.gazeValidated = false;
   state.cloudCalibrationComplete = false;
-  state.calibrationIndex = 0;
-  state.calibrationTotalSamples = 0;
-  state.calibrationPointSamples = 0;
   el.calibrationGrid.innerHTML = "";
   el.calibrationProgress.style.width = "0%";
-  el.calibrationStatus.textContent = "GazeCloud calibration is running in its own camera overlay. Complete it there, then this page will run 5-point validation.";
+  el.calibrationStatus.textContent = "GazeCloud calibration is running in its own camera overlay. Complete it there, then this page opens the heatmap surface.";
   el.calibrationPointStatus.textContent = "GazeCloud";
   el.calibrationSampleStatus.textContent = "0";
   el.gazeStatus.textContent = state.realGazeSamples ? `receiving (${state.realGazeSamples})` : "waiting";
 }
 
-function beginValidation() {
-  clearCalibrationTimers();
-  state.validationActive = true;
-  state.gazeValidated = false;
-  state.validationIndex = 0;
-  state.validationResults = [];
-  state.validationCurrentSamples = [];
-  el.calibrationGrid.innerHTML = "";
-  el.calibrationProgress.style.width = "0%";
-  el.calibrationPointStatus.textContent = `0 / ${VALIDATION_POINTS.length}`;
-  el.calibrationSampleStatus.textContent = "0 validation";
-  el.calibrationStatus.textContent = "Validation: look at each highlighted dot. Heatmap starts only if predictions follow the dots.";
-
-  VALIDATION_POINTS.forEach((pointConfig, index) => {
-    const point = document.createElement("span");
-    point.className = "calibration-point is-validation";
-    point.setAttribute("aria-label", `validation point ${index + 1}`);
-    point.style.left = `${pointConfig.x}%`;
-    point.style.top = `${pointConfig.y}%`;
-    point.dataset.index = String(index);
-    el.calibrationGrid.appendChild(point);
-  });
-
-  advanceValidationPoint();
-}
-
-function advanceValidationPoint() {
-  clearCalibrationTimers();
-
-  if (state.validationIndex >= VALIDATION_POINTS.length) {
-    finishValidation();
-    return;
-  }
-
-  const pointNode = el.calibrationGrid.querySelector(`[data-index="${state.validationIndex}"]`);
-  const pointNumber = state.validationIndex + 1;
-  state.validationStartedAt = Date.now();
-  state.validationCurrentSamples = [];
-
-  el.calibrationGrid.querySelectorAll(".calibration-point").forEach((node) => node.classList.remove("is-active"));
-  pointNode?.classList.add("is-active");
-  el.calibrationProgress.style.width = `${(state.validationIndex / VALIDATION_POINTS.length) * 100}%`;
-  el.calibrationPointStatus.textContent = `${pointNumber} / ${VALIDATION_POINTS.length}`;
-  el.calibrationSampleStatus.textContent = "0 validation";
-  el.calibrationStatus.textContent = `Validation ${pointNumber}: look at the highlighted dot. The app is checking whether GazeCloud follows your gaze.`;
-
-  state.calibrationTimeout = window.setTimeout(() => {
-    const result = scoreValidationPoint(state.validationCurrentSamples);
-    state.validationResults.push(result);
-    pointNode?.classList.remove("is-active");
-    pointNode?.classList.add(result.passed ? "is-done" : "is-failed");
-    state.validationIndex += 1;
-    el.calibrationProgress.style.width = `${(state.validationIndex / VALIDATION_POINTS.length) * 100}%`;
-    advanceValidationPoint();
-  }, VALIDATION_HOLD_MS);
-}
-
-function recordValidationPrediction(clientX, clientY) {
-  if (!state.validationActive || Date.now() - state.validationStartedAt < VALIDATION_WARMUP_MS) return;
-
-  const point = VALIDATION_POINTS[state.validationIndex];
-  if (!point) return;
-
-  const target = getStagePointScreenPosition(point.x, point.y);
-  const distance = Math.hypot(clientX - target.screenX, clientY - target.screenY);
-  state.validationCurrentSamples.push(distance);
-  el.calibrationSampleStatus.textContent = `${state.validationCurrentSamples.length} validation`;
-}
-
-function scoreValidationPoint(distances) {
-  const threshold = getValidationRadius();
-  if (distances.length < 4) {
-    return { passed: false, samples: distances.length, meanError: Infinity, hitRatio: 0, threshold };
-  }
-
-  const meanError = distances.reduce((sum, value) => sum + value, 0) / distances.length;
-  const hitRatio = distances.filter((distance) => distance <= threshold).length / distances.length;
-  return {
-    passed: hitRatio >= 0.35 && meanError <= threshold * 1.45,
-    samples: distances.length,
-    meanError,
-    hitRatio,
-    threshold,
-  };
-}
-
-function finishValidation() {
-  state.validationActive = false;
-  const passedPoints = state.validationResults.filter((result) => result.passed).length;
-  const usableResults = state.validationResults.filter((result) => Number.isFinite(result.meanError));
-  const meanError = usableResults.length
-    ? usableResults.reduce((sum, result) => sum + result.meanError, 0) / usableResults.length
-    : Infinity;
-  const threshold = getValidationRadius();
-  const validationPassed = passedPoints >= 3 && meanError <= threshold * 1.55;
-
-  el.calibrationProgress.style.width = "100%";
-  el.calibrationPointStatus.textContent = `${passedPoints} / ${VALIDATION_POINTS.length}`;
-  el.calibrationSampleStatus.textContent = Number.isFinite(meanError) ? `${Math.round(meanError)}px mean` : "no gaze";
-
-  if (!validationPassed) {
-    state.gazeValidated = false;
-    state.source = "waiting";
-    el.gazeStatus.textContent = `failed (${passedPoints}/${VALIDATION_POINTS.length})`;
-    el.trackingStatus.textContent = "Gaze validation failed";
-    el.cameraNote.textContent = "GazeCloud predictions did not match validation targets. This run is not reliable for heatmap capture.";
-    el.calibrationStatus.textContent = "Validation failed: predictions did not follow the target points. Retry with a live face, stable phone, and better lighting.";
-    logDebug(`validation failed. passed=${passedPoints}/${VALIDATION_POINTS.length} mean=${Number.isFinite(meanError) ? Math.round(meanError) : "none"} threshold=${Math.round(threshold)}`);
-    return;
-  }
-
-  state.gazeValidated = true;
+function enterCaptureAfterGazeCloudCalibration() {
+  state.cloudCalibrationComplete = true;
   state.source = "gaze";
   resetHeat();
-  el.gazeStatus.textContent = `validated (${passedPoints}/${VALIDATION_POINTS.length})`;
-  el.trackingStatus.textContent = "Validated camera gaze active";
-  el.cameraNote.textContent = "Gaze validation passed. Heatmap now uses GazeCloud predictions from this page only.";
-  el.calibrationStatus.textContent = "Validation passed. Moving to heatmap capture.";
-  logDebug(`validation passed. passed=${passedPoints}/${VALIDATION_POINTS.length} mean=${Math.round(meanError)} threshold=${Math.round(threshold)}`);
-  window.setTimeout(() => switchScreen("capture"), 700);
-}
-
-function getValidationRadius() {
-  return clamp(Math.hypot(window.innerWidth, window.innerHeight) * 0.18, 110, 190);
-}
-
-function getStagePointScreenPosition(percentX, percentY) {
-  const rect = el.calibrationStage.getBoundingClientRect();
-  return {
-    screenX: rect.left + (percentX / 100) * rect.width,
-    screenY: rect.top + (percentY / 100) * rect.height,
-  };
+  el.cameraStatus.textContent = "active";
+  el.calibrationProgress.style.width = "100%";
+  el.calibrationPointStatus.textContent = "complete";
+  el.calibrationSampleStatus.textContent = String(state.realGazeSamples);
+  el.gazeStatus.textContent = state.realGazeSamples ? `receiving (${state.realGazeSamples})` : "ready";
+  el.trackingStatus.textContent = "GazeCloud gaze active";
+  el.cameraNote.textContent = "GazeCloud calibration complete. Heatmap now uses GazeCloud docX/docY samples from this page.";
+  el.calibrationStatus.textContent = "GazeCloud calibration complete. Moving to heatmap capture.";
+  logDebug("GazeCloud calibration complete. entering capture.");
+  window.setTimeout(() => switchScreen("capture"), 350);
 }
 
 function clearCalibrationTimers() {
-  if (state.calibrationTimeout) {
-    window.clearTimeout(state.calibrationTimeout);
-    state.calibrationTimeout = null;
-  }
-
-  if (state.calibrationRecorder) {
-    window.clearInterval(state.calibrationRecorder);
-    state.calibrationRecorder = null;
-  }
 }
 
 function skipCalibration() {
   clearCalibrationTimers();
-  state.validationActive = false;
-  state.gazeValidated = false;
   stopTrackingQuietly();
   state.trackerActive = false;
   state.cloudCalibrationComplete = false;
@@ -419,7 +257,6 @@ function skipCalibration() {
 
 function recalibrate() {
   if (state.trackerActive) {
-    state.gazeValidated = false;
     skipCalibration();
     return;
   }
@@ -599,17 +436,15 @@ function renderRoi() {
 function renderStats(max) {
   const hotPercent = max ? Math.min(99, Math.round(max * 28)) : 0;
   const dominant = getDominantRegion();
-  const mode = state.source === "gaze" && state.gazeValidated ? "Validated camera gaze" : state.source === "gaze" ? "Unvalidated camera gaze" : state.source === "simulation" ? "Simulation" : "Waiting";
+  const mode = state.source === "gaze" ? "GazeCloud gaze" : state.source === "simulation" ? "Simulation" : "Waiting";
 
   el.sampleMetric.textContent = String(state.sampleCount);
   el.hotMetric.textContent = `${hotPercent}%`;
-  el.trackingStatus.textContent = state.source === "gaze" && state.gazeValidated ? "Validated camera gaze active" : state.source === "gaze" ? "Camera gaze not validated" : state.source === "simulation" ? "Pointer / touch simulation active" : "Waiting for gaze samples";
+  el.trackingStatus.textContent = state.source === "gaze" ? "GazeCloud gaze active" : state.source === "simulation" ? "Pointer / touch simulation active" : "Waiting for gaze samples";
   el.regionTitle.textContent = dominant.region === "none" ? "Heat forming on test surface" : `${regionLabels[dominant.region]} is hottest`;
   el.regionCopy.textContent = state.roi
     ? `ROI is calculated from the strongest heat cluster and expanded by ${ROI_PADDING}px. Screenshot stays inside this page.`
-    : state.source === "gaze" && !state.gazeValidated
-      ? "Gaze predictions are not validated, so they are not allowed to generate a heat region."
-      : "Look at one area for a few seconds, or use pointer fallback to form a stable heat region.";
+    : "Look at one area for a few seconds, or use pointer fallback to form a stable heat region.";
   el.regionStats.innerHTML = `
     <div><span>Mode</span><strong>${mode}</strong></div>
     <div><span>Dominant area</span><strong>${regionLabels[dominant.region] || regionLabels.none}</strong></div>

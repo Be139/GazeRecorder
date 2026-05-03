@@ -7,10 +7,10 @@
     <title>UNO Gaze Heat Region</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=13" />
+    <link rel="stylesheet" href="./styles.css?v=14" />
     <script defer src="https://api.gazerecorder.com/GazeCloudAPI.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-    <script defer src="./app.js?v=13"></script>
+    <script defer src="./app.js?v=14"></script>
   </head>
   <body>
     <header class="top-bar">
@@ -20,7 +20,7 @@
       </div>
       <div class="step-indicator" aria-label="prototype steps">
         <span data-step-pill="intro">1 Feed</span>
-        <span data-step-pill="calibration">2 Validate</span>
+        <span data-step-pill="calibration">2 Calibrate</span>
         <span data-step-pill="capture">3 Capture</span>
       </div>
     </header>
@@ -32,7 +32,7 @@
             <p class="eyebrow">controlled information page</p>
             <h2>先在一个多信息页面里验证眼动是否能工作。</h2>
             <p>
-              这个版本只测试当前网页内的 GazeCloudAPI 摄像头眼动、目标点验证、热区生成和 ROI 截图。
+              这个版本只测试当前网页内的 GazeCloudAPI 摄像头眼动、热区生成和 ROI 截图。
               不做 OCR、AI 上传、跨 APP 截图或后台摄像头。
             </p>
             <div class="actions">
@@ -40,7 +40,7 @@
               <button class="secondary-button" id="openFallbackButton" type="button">Pointer demo only</button>
             </div>
             <p class="status-note" id="introStatus">
-              Real gaze must pass calibration and target validation before it can generate a heatmap. Pointer demo does not validate eye tracking.
+              Real gaze starts after GazeCloud calibration completes. Pointer demo only tests heatmap and screenshot mechanics.
             </p>
             <details class="debug-panel">
               <summary>Diagnostics</summary>
@@ -82,9 +82,9 @@
         <div class="calibration-layout">
           <aside class="calibration-panel">
             <p class="eyebrow">GazeCloud calibration</p>
-            <h2>先完成 GazeCloud 校准，再看本页验证点。</h2>
+            <h2>完成 GazeCloud 校准后，直接进入信息热区页。</h2>
             <p>
-              页面会调用 <code>GazeCloudAPI.StartEyeTracking()</code>，通过 <code>OnResult</code> 读取 <code>docX/docY/state</code>。
+              页面调用 <code>GazeCloudAPI.StartEyeTracking()</code>，并把 <code>OnResult</code> 的 <code>docX/docY/state</code> 传入热区采样。
             </p>
             <div class="calibration-stats">
               <div><span>Camera</span><strong id="cameraStatus">waiting</strong></div>
@@ -103,7 +103,7 @@
               <span id="calibrationProgress"></span>
             </div>
             <p class="calibration-status" id="calibrationStatus">
-              Real camera preview and face feedback should be visible. Heatmap capture starts only after validation passes.
+              Complete the GazeCloud camera calibration overlay. This page will then open the heatmap surface.
             </p>
           </section>
         </div>
@@ -148,7 +148,7 @@
               </div>
 
               <div class="status-note" id="cameraNote">
-                Validated GazeCloud gaze samples will draw the heatmap. Pointer movement is demo only.
+                GazeCloud gaze samples draw the heatmap after API calibration. Pointer movement is demo only.
               </div>
 
               <div class="test-surface" id="captureSurface">
