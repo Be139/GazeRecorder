@@ -7,10 +7,10 @@
     <title>UNO Gaze Heat Region</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=7" />
     <script defer src="https://cdn.jsdelivr.net/npm/webgazer@3.5.3/dist/webgazer.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-    <script defer src="./app.js"></script>
+    <script defer src="./app.js?v=7"></script>
   </head>
   <body>
     <header class="top-bar">
@@ -42,6 +42,10 @@
             <p class="status-note" id="introStatus">
               Camera gaze requires HTTPS and camera permission. Fallback only tests heatmap and screenshot mechanics.
             </p>
+            <details class="debug-panel">
+              <summary>Diagnostics</summary>
+              <pre id="debugLog">Waiting for start...</pre>
+            </details>
           </section>
 
           <section class="feed-wall" aria-label="dense test feed">

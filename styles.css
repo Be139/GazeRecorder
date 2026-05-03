@@ -269,6 +269,30 @@ code {
   line-height: 1.5;
 }
 
+.debug-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--muted);
+}
+
+.debug-panel summary {
+  padding: 11px 14px;
+  cursor: pointer;
+  color: var(--accent-dark);
+  font-weight: 760;
+}
+
+.debug-panel pre {
+  max-height: 220px;
+  margin: 0;
+  padding: 0 14px 14px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
 .feed-wall {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

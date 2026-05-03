@@ -7,6 +7,7 @@ const CALIBRATION_HOLD_MS = 1800;
 const CALIBRATION_RECORD_EVERY_MS = 180;
 const CALIBRATION_EVENT_TYPE = "click";
 const MEDIAPIPE_FACE_MESH_PATH = "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh";
+const BUILD_VERSION = "2026-05-03-v7";
 const CALIBRATION_POINTS = [
   { x: 15, y: 15 },
   { x: 50, y: 15 },
@@ -79,6 +80,7 @@ const el = {
   emptyPreview: document.querySelector("#emptyPreview"),
   previewImage: document.querySelector("#previewImage"),
   downloadLink: document.querySelector("#downloadLink"),
+  debugLog: document.querySelector("#debugLog"),
 };
 
 function createHeatGrid() {
@@ -117,15 +119,21 @@ async function startDetection() {
   el.startDetectionButton.disabled = true;
   el.introStatus.textContent = "Requesting camera permission and starting WebGazer...";
   el.cameraStatus.textContent = "requesting";
+  logDebug(`Start detection. build=${BUILD_VERSION}`);
+  logDebug(`secure=${window.isSecureContext} protocol=${window.location.protocol}`);
+  logDebug(`cameraAPI=${Boolean(navigator.mediaDevices?.getUserMedia)} webgazer=${Boolean(window.webgazer)}`);
 
   try {
     if (!window.webgazer) throw new Error("WebGazer script is not loaded");
 
     configureWebGazer(window.webgazer);
+    logDebug(`faceMeshPath=${window.webgazer.params?.faceMeshSolutionPath || "unknown"}`);
     await window.webgazer.begin(() => {
       console.warn("WebGazer camera stream callback fired before initialization completed.");
+      logDebug("WebGazer camera callback fired.");
     });
     showWebGazerFeedback(window.webgazer);
+    logDebug(`begin ok. ready=${Boolean(window.webgazer.isReady?.())}`);
 
     state.webgazerActive = true;
     state.source = "gaze";
@@ -142,6 +150,8 @@ async function startDetection() {
     el.startDetectionButton.disabled = false;
     el.cameraStatus.textContent = "unavailable";
     el.introStatus.textContent = `Camera unavailable: ${error.message}. You can still test pointer fallback.`;
+    logDebug(`ERROR ${error.name || "Error"}: ${error.message}`);
+    if (error.stack) logDebug(error.stack.split("\n").slice(0, 4).join(" | "));
     console.warn(error);
   }
 }
@@ -554,11 +564,27 @@ function registerServiceWorker() {
   }
 }
 
+function logDebug(message) {
+  if (!el.debugLog) return;
+  const time = new Date().toLocaleTimeString();
+  el.debugLog.textContent = `${el.debugLog.textContent}\n[${time}] ${message}`.trim();
+}
+
+window.addEventListener("error", (event) => {
+  logDebug(`window error: ${event.message}`);
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason;
+  logDebug(`unhandled rejection: ${reason?.message || reason}`);
+});
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
 buildHeatmapGrid();
+logDebug(`Loaded build ${BUILD_VERSION}`);
 switchScreen("intro");
 renderHeatmap();
 el.captureSurface.addEventListener("pointermove", handlePointerSample);
