@@ -7,10 +7,10 @@
     <title>UNO Gaze Heat Region</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=8" />
+    <link rel="stylesheet" href="./styles.css?v=11" />
     <script defer src="https://cdn.jsdelivr.net/npm/webgazer@3.5.3/dist/webgazer.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-    <script defer src="./app.js?v=8"></script>
+    <script defer src="./app.js?v=11"></script>
   </head>
   <body>
     <header class="top-bar">
@@ -37,10 +37,10 @@
             </p>
             <div class="actions">
               <button class="primary-button" id="startDetectionButton" type="button">Start detection</button>
-              <button class="secondary-button" id="openFallbackButton" type="button">Demo fallback only</button>
+              <button class="secondary-button" id="openFallbackButton" type="button">Pointer demo only</button>
             </div>
             <p class="status-note" id="introStatus">
-              Camera gaze requires HTTPS and camera permission. Fallback only tests heatmap and screenshot mechanics.
+              Real gaze requires HTTPS, Android Chrome, and a real front camera. Pointer demo does not validate eye tracking.
             </p>
             <details class="debug-panel">
               <summary>Diagnostics</summary>
@@ -104,7 +104,7 @@
               <span id="calibrationProgress"></span>
             </div>
             <p class="calibration-status" id="calibrationStatus">
-              Camera preview and face feedback should be visible. Keep your face inside the box.
+              Real camera preview and face feedback should be visible. Keep your face inside the box and look only at the highlighted dot.
             </p>
           </section>
         </div>

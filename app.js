@@ -6,18 +6,19 @@ const SAMPLE_LIMIT = 1200;
 const CALIBRATION_HOLD_MS = 1800;
 const CALIBRATION_RECORD_EVERY_MS = 180;
 const CALIBRATION_EVENT_TYPE = "click";
+const CAMERA_TRACK_TIMEOUT_MS = 6500;
 const MEDIAPIPE_FACE_MESH_PATH = "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh";
-const BUILD_VERSION = "2026-05-03-v8";
+const BUILD_VERSION = "2026-05-03-v11";
 const CALIBRATION_POINTS = [
-  { x: 15, y: 15 },
-  { x: 50, y: 15 },
-  { x: 85, y: 15 },
+  { x: 10, y: 10 },
+  { x: 50, y: 10 },
+  { x: 90, y: 10 },
   { x: 15, y: 50 },
   { x: 50, y: 50 },
   { x: 85, y: 50 },
-  { x: 15, y: 85 },
-  { x: 50, y: 85 },
-  { x: 85, y: 85 },
+  { x: 10, y: 78 },
+  { x: 50, y: 78 },
+  { x: 90, y: 78 },
 ];
 
 const regionLabels = {
@@ -136,7 +137,11 @@ async function startDetection() {
       logDebug("WebGazer camera callback fired.");
     });
     showWebGazerFeedback(window.webgazer);
-    reportCameraTrack();
+    await waitForCameraTrack();
+    const trackInfo = reportCameraTrack();
+    if (trackInfo.isVirtual) {
+      throw new Error(`Virtual camera detected: ${trackInfo.label}. Use Android Chrome with the real front camera.`);
+    }
     logDebug(`begin ok. ready=${Boolean(window.webgazer.isReady?.())}`);
 
     state.webgazerActive = true;
@@ -149,11 +154,15 @@ async function startDetection() {
     switchScreen("calibration");
     beginCalibration();
   } catch (error) {
-    state.source = "simulation";
+    state.source = "waiting";
     state.webgazerActive = false;
+    stopWebGazerQuietly();
     el.startDetectionButton.disabled = false;
-    el.cameraStatus.textContent = "unavailable";
-    el.introStatus.textContent = `Camera unavailable: ${error.message}. You can still test pointer fallback.`;
+    const virtualCamera = /Virtual camera detected/i.test(error.message);
+    el.cameraStatus.textContent = virtualCamera ? "virtual rejected" : "unavailable";
+    el.introStatus.textContent = virtualCamera
+      ? `${error.message} This prototype requires a real phone front camera.`
+      : `Camera unavailable: ${error.message}. You can still test pointer fallback.`;
     logDebug(`ERROR ${error.name || "Error"}: ${error.message}`);
     if (error.stack) logDebug(error.stack.split("\n").slice(0, 4).join(" | "));
     console.warn(error);
@@ -188,15 +197,33 @@ function showWebGazerFeedback(gaze) {
   gaze.showPredictionPoints?.(true);
 }
 
-function reportCameraTrack() {
+async function waitForCameraTrack() {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < CAMERA_TRACK_TIMEOUT_MS) {
+    const track = getWebGazerVideoTrack();
+    if (track) {
+      logDebug("cameraTrack exposed by WebGazer.");
+      return track;
+    }
+    await delay(120);
+  }
+
+  throw new Error("WebGazer did not expose a real camera video track. Check camera permission and use Android Chrome.");
+}
+
+function getWebGazerVideoTrack() {
   const video = document.querySelector("#webgazerVideoFeed");
   const stream = video?.srcObject;
-  const track = stream?.getVideoTracks?.()[0];
+  return stream?.getVideoTracks?.()[0] || null;
+}
+
+function reportCameraTrack() {
+  const track = getWebGazerVideoTrack();
 
   if (!track) {
     el.cameraTrackStatus.textContent = "no video track";
     logDebug("cameraTrack=none");
-    return;
+    return { isVirtual: false, label: "none" };
   }
 
   const settings = track.getSettings?.() || {};
@@ -204,8 +231,23 @@ function reportCameraTrack() {
   const facing = settings.facingMode ? ` ${settings.facingMode}` : "";
   const label = track.label || "camera label hidden";
   const trackText = `${label} / ${size}${facing}`;
+  const isVirtual = isVirtualCameraTrack(label, settings);
   el.cameraTrackStatus.textContent = trackText;
-  logDebug(`cameraTrack=${trackText}`);
+  logDebug(`cameraTrack=${trackText}${isVirtual ? " [virtual rejected]" : ""}`);
+  return { isVirtual, label, settings };
+}
+
+function isVirtualCameraTrack(label, settings = {}) {
+  const haystack = [label, settings.deviceId, settings.groupId].filter(Boolean).join(" ");
+  return /fake|virtual|obs|manycam|snap camera|xsplit|droidcam|ivcam/i.test(haystack);
+}
+
+function stopWebGazerQuietly() {
+  try {
+    window.webgazer?.end?.();
+  } catch (error) {
+    console.warn(error);
+  }
 }
 
 function openPointerFallback() {
@@ -589,8 +631,12 @@ function resetHeat() {
 
 function registerServiceWorker() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./service-worker.js").catch((error) => console.warn(error));
+    navigator.serviceWorker.register(`./service-worker.js?v=${encodeURIComponent(BUILD_VERSION)}`).catch((error) => console.warn(error));
   }
+}
+
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function logDebug(message) {

@@ -30,6 +30,10 @@ body {
   overflow-x: hidden;
 }
 
+body[data-screen="calibration"] {
+  overflow: hidden;
+}
+
 body.is-capturing .heatmap-grid,
 body.is-capturing .roi-box,
 body.is-capturing .gaze-dot {
@@ -56,10 +60,10 @@ body[data-screen="calibration"] #webgazerVideoContainer {
   position: fixed !important;
   top: auto !important;
   left: auto !important;
-  right: max(18px, env(safe-area-inset-right)) !important;
-  bottom: max(18px, env(safe-area-inset-bottom)) !important;
-  width: min(320px, calc(100vw - 36px)) !important;
-  height: min(240px, calc((100vw - 36px) * 0.75)) !important;
+  right: max(10px, env(safe-area-inset-right)) !important;
+  bottom: max(12px, env(safe-area-inset-bottom)) !important;
+  width: min(112px, 28vw) !important;
+  height: min(84px, 21vw) !important;
 }
 
 body:not([data-screen="calibration"]) #webgazerVideoContainer {
@@ -163,6 +167,10 @@ code {
   position: sticky;
   top: 0;
   z-index: 30;
+}
+
+body[data-screen="calibration"] .top-bar {
+  display: none;
 }
 
 .step-indicator {
@@ -344,11 +352,21 @@ code {
 }
 
 .calibration-layout {
-  min-height: calc(100svh - 78px);
+  min-height: 100svh;
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
   gap: 24px;
   padding: clamp(18px, 4vw, 42px);
+}
+
+body[data-screen="calibration"] .calibration-layout {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: block;
+  min-height: 100svh;
+  padding: 0;
+  background: #f8faf6;
 }
 
 .calibration-panel {
@@ -359,6 +377,29 @@ code {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.78);
+}
+
+body[data-screen="calibration"] .calibration-panel {
+  position: fixed;
+  left: max(10px, env(safe-area-inset-left));
+  right: calc(max(10px, env(safe-area-inset-right)) + min(122px, 30vw));
+  bottom: max(10px, env(safe-area-inset-bottom));
+  z-index: 70;
+  min-height: 0;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(16px);
+}
+
+body[data-screen="calibration"] .calibration-panel .eyebrow,
+body[data-screen="calibration"] .calibration-panel h2,
+body[data-screen="calibration"] .calibration-panel p:not(.eyebrow) {
+  display: none;
 }
 
 .calibration-panel h2 {
@@ -375,6 +416,12 @@ code {
   border-top: 1px solid var(--line);
 }
 
+body[data-screen="calibration"] .calibration-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  border-top: 0;
+}
+
 .calibration-stats div {
   min-height: 54px;
   padding: 12px 0;
@@ -383,12 +430,38 @@ code {
   gap: 4px;
 }
 
+body[data-screen="calibration"] .calibration-stats div {
+  min-height: 40px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(244, 246, 241, 0.86);
+  overflow: hidden;
+}
+
+body[data-screen="calibration"] .calibration-stats div:nth-child(3),
+body[data-screen="calibration"] .calibration-stats div:nth-child(4) {
+  display: none;
+}
+
 .calibration-stats span {
   color: var(--muted);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-weight: 700;
+}
+
+body[data-screen="calibration"] .calibration-stats span {
+  font-size: 9px;
+}
+
+body[data-screen="calibration"] .calibration-stats strong {
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .calibration-stage {
@@ -403,6 +476,22 @@ code {
   background-size: 33.333% 33.333%;
   overflow: hidden;
   box-shadow: var(--shadow);
+}
+
+body[data-screen="calibration"] .calibration-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  min-height: 100svh;
+  width: 100vw;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background:
+    linear-gradient(rgba(38, 51, 47, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(38, 51, 47, 0.07) 1px, transparent 1px),
+    #ffffff;
+  background-size: 33.333% 33.333%;
 }
 
 .calibration-grid {
@@ -421,6 +510,12 @@ code {
   opacity: 0.46;
   transform: translate(-50%, -50%);
   transition: background 180ms ease, box-shadow 180ms ease, transform 180ms ease, opacity 180ms ease;
+}
+
+body[data-screen="calibration"] .calibration-point {
+  z-index: 4;
+  width: 28px;
+  height: 28px;
 }
 
 .calibration-point.is-active {
@@ -470,6 +565,24 @@ code {
   color: var(--muted);
   line-height: 1.5;
   z-index: 2;
+}
+
+body[data-screen="calibration"] .calibration-status {
+  left: max(10px, env(safe-area-inset-left));
+  right: auto;
+  top: max(10px, env(safe-area-inset-top));
+  width: min(78vw, 280px);
+  min-height: 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.35;
+  z-index: 5;
+}
+
+body[data-screen="calibration"] #skipCalibrationButton {
+  min-height: 38px;
+  padding: 0 12px;
+  font-size: 12px;
 }
 
 .app-shell {
