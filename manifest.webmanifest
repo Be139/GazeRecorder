@@ -1,0 +1,31 @@
+{
+  "name": "UNO Gaze Heat Region",
+  "short_name": "Gaze Heat",
+  "description": "A controlled-page gaze proxy prototype for heat-region ROI capture.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f6f1",
+  "theme_color": "#26332f",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "./assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

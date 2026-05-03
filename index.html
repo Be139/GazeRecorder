@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#26332f" />
+    <title>UNO Gaze Heat Region</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script defer src="https://cdn.jsdelivr.net/npm/webgazer@3.5.3/dist/webgazer.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script defer src="./app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="top-bar">
+        <div>
+          <p class="eyebrow">UNO / feasibility prototype</p>
+          <h1>Gaze Heat Region</h1>
+        </div>
+        <button class="ghost-button" id="resetButton" type="button">Reset</button>
+      </header>
+
+      <main class="workspace">
+        <section class="live-strip" aria-label="tracking status">
+          <div class="signal-block">
+            <span class="signal-dot" id="signalDot"></span>
+            <div>
+              <p class="label">Input source</p>
+              <p id="trackingStatus">Pointer simulation active</p>
+            </div>
+          </div>
+          <div class="metric">
+            <span id="sampleMetric">0</span>
+            <small>samples</small>
+          </div>
+          <div class="metric">
+            <span id="hotMetric">0%</span>
+            <small>hot score</small>
+          </div>
+          <div class="metric">
+            <span id="roiMetric">--</span>
+            <small>ROI size</small>
+          </div>
+        </section>
+
+        <section class="capture-stage" aria-label="controlled gaze heat test">
+          <div class="stage-intro">
+            <div>
+              <p class="eyebrow">controlled page only</p>
+              <h2>Look at one area, then capture the hot region.</h2>
+            </div>
+            <div class="actions">
+              <button class="primary-button" id="startGazeButton" type="button">Start camera</button>
+              <button class="secondary-button" id="captureButton" type="button">Capture hot region</button>
+            </div>
+          </div>
+
+          <div class="test-surface" id="captureSurface">
+            <div class="test-content">
+              <article class="test-tile tile-work" data-region="work">
+                <span>Work signal</span>
+                <h3>明早评审前，需要补一页竞品变化。</h3>
+                <p>用于验证 gaze 是否能稳定落在上方偏左的大块文字区域。</p>
+              </article>
+              <article class="test-tile tile-trend" data-region="trend">
+                <span>Trend pull</span>
+                <h3>一个新工具正在改变知识工作者的交付方式。</h3>
+                <p>用于验证视线停留是否会形成连续热区。</p>
+              </article>
+              <article class="test-tile tile-rest" data-region="rest">
+                <span>Rest content</span>
+                <h3>三十秒晚饭后散步片段。</h3>
+                <p>用于对照休闲内容区域与高热内容区域。</p>
+              </article>
+              <article class="test-tile tile-growth" data-region="growth">
+                <span>Growth note</span>
+                <h3>下班后如何保持学习节奏。</h3>
+                <p>用于测试屏幕下方区域的 ROI 计算。</p>
+              </article>
+            </div>
+            <div class="heatmap-grid" id="heatmapGrid" aria-hidden="true"></div>
+            <div class="roi-box" id="roiBox" aria-hidden="true">
+              <span>ROI</span>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <aside class="side-panel" aria-label="heat region inspector">
+        <section class="panel-section">
+          <p class="label">Heat region</p>
+          <h2 id="regionTitle">Waiting for samples</h2>
+          <p id="regionCopy">Use pointer movement now, or start camera on HTTPS / localhost to test WebGazer gaze proxy.</p>
+        </section>
+
+        <section class="packet-list" id="regionStats">
+          <div><span>Mode</span><strong>Simulation</strong></div>
+          <div><span>Grid</span><strong>12 x 20</strong></div>
+          <div><span>Screenshot</span><strong>Current page ROI only</strong></div>
+        </section>
+
+        <section class="capture-preview" id="capturePreview" aria-label="captured ROI preview">
+          <p class="label">Captured ROI</p>
+          <div class="empty-preview" id="emptyPreview">No capture yet</div>
+          <img id="previewImage" alt="Captured hot region preview" hidden />
+          <a class="download-link" id="downloadLink" download="gaze-hot-region.png" hidden>Download PNG</a>
+        </section>
+      </aside>
+    </div>
+
+    <div class="gaze-dot" id="gazeDot" aria-hidden="true"></div>
+
+    <section class="calibration" id="calibration" aria-hidden="true">
+      <div class="calibration-copy">
+        <p class="eyebrow">quick calibration</p>
+        <h2>Tap each point once</h2>
+        <p>Calibration only trains the camera gaze proxy. Pointer simulation stays available.</p>
+      </div>
+      <div class="calibration-grid" id="calibrationGrid"></div>
+      <button class="secondary-button" id="skipCalibrationButton" type="button">Skip calibration</button>
+    </section>
+  </body>
+</html>
