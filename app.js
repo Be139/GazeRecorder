@@ -7,15 +7,15 @@ const CALIBRATION_HOLD_MS = 1800;
 const CALIBRATION_RECORD_EVERY_MS = 180;
 const CALIBRATION_EVENT_TYPE = "click";
 const CALIBRATION_POINTS = [
-  { x: 12, y: 14 },
-  { x: 50, y: 14 },
-  { x: 88, y: 14 },
-  { x: 12, y: 50 },
+  { x: 15, y: 15 },
+  { x: 50, y: 15 },
+  { x: 85, y: 15 },
+  { x: 15, y: 50 },
   { x: 50, y: 50 },
-  { x: 88, y: 50 },
-  { x: 12, y: 86 },
-  { x: 50, y: 86 },
-  { x: 88, y: 86 },
+  { x: 85, y: 50 },
+  { x: 15, y: 85 },
+  { x: 50, y: 85 },
+  { x: 85, y: 85 },
 ];
 
 const regionLabels = {
@@ -27,19 +27,38 @@ const regionLabels = {
 };
 
 const state = {
-  source: "simulation",
+  screen: "intro",
+  source: "waiting",
   sampleCount: 0,
-  heat: Array.from({ length: GRID_ROWS }, () => Array(GRID_COLUMNS).fill(0)),
+  heat: createHeatGrid(),
   regionHits: new Map(),
   lastPoint: null,
   roi: null,
   renderQueued: false,
+  webgazerActive: false,
+  lastGazeAt: 0,
   calibrationIndex: 0,
+  calibrationTotalSamples: 0,
+  calibrationPointSamples: 0,
   calibrationTimeout: null,
   calibrationRecorder: null,
 };
 
 const el = {
+  screens: document.querySelectorAll("[data-screen]"),
+  stepPills: document.querySelectorAll("[data-step-pill]"),
+  introStatus: document.querySelector("#introStatus"),
+  startDetectionButton: document.querySelector("#startDetectionButton"),
+  openFallbackButton: document.querySelector("#openFallbackButton"),
+  cameraStatus: document.querySelector("#cameraStatus"),
+  calibrationPointStatus: document.querySelector("#calibrationPointStatus"),
+  calibrationSampleStatus: document.querySelector("#calibrationSampleStatus"),
+  gazeStatus: document.querySelector("#gazeStatus"),
+  calibrationStage: document.querySelector("#calibrationStage"),
+  calibrationGrid: document.querySelector("#calibrationGrid"),
+  calibrationStatus: document.querySelector("#calibrationStatus"),
+  calibrationProgress: document.querySelector("#calibrationProgress"),
+  skipCalibrationButton: document.querySelector("#skipCalibrationButton"),
   captureSurface: document.querySelector("#captureSurface"),
   heatmapGrid: document.querySelector("#heatmapGrid"),
   roiBox: document.querySelector("#roiBox"),
@@ -52,20 +71,18 @@ const el = {
   regionTitle: document.querySelector("#regionTitle"),
   regionCopy: document.querySelector("#regionCopy"),
   regionStats: document.querySelector("#regionStats"),
-  startGazeButton: document.querySelector("#startGazeButton"),
-  captureButton: document.querySelector("#captureButton"),
-  resetButton: document.querySelector("#resetButton"),
   cameraNote: document.querySelector("#cameraNote"),
-  calibration: document.querySelector("#calibration"),
-  calibrationStage: document.querySelector("#calibrationStage"),
-  calibrationGrid: document.querySelector("#calibrationGrid"),
-  calibrationStatus: document.querySelector("#calibrationStatus"),
-  calibrationProgress: document.querySelector("#calibrationProgress"),
-  skipCalibrationButton: document.querySelector("#skipCalibrationButton"),
+  recalibrateButton: document.querySelector("#recalibrateButton"),
+  resetButton: document.querySelector("#resetButton"),
+  captureButton: document.querySelector("#captureButton"),
   emptyPreview: document.querySelector("#emptyPreview"),
   previewImage: document.querySelector("#previewImage"),
   downloadLink: document.querySelector("#downloadLink"),
 };
+
+function createHeatGrid() {
+  return Array.from({ length: GRID_ROWS }, () => Array(GRID_COLUMNS).fill(0));
+}
 
 function buildHeatmapGrid() {
   el.heatmapGrid.style.setProperty("--grid-columns", GRID_COLUMNS);
@@ -81,6 +98,169 @@ function buildHeatmapGrid() {
       el.heatmapGrid.appendChild(cell);
     }
   }
+}
+
+function switchScreen(screen) {
+  state.screen = screen;
+  document.body.dataset.screen = screen;
+  el.screens.forEach((node) => node.classList.toggle("is-active", node.dataset.screen === screen));
+  el.stepPills.forEach((node) => node.classList.toggle("is-active", node.dataset.stepPill === screen));
+  window.scrollTo(0, 0);
+
+  if (screen === "capture") {
+    renderHeatmap();
+  }
+}
+
+async function startDetection() {
+  el.startDetectionButton.disabled = true;
+  el.introStatus.textContent = "Requesting camera permission and starting WebGazer...";
+  el.cameraStatus.textContent = "requesting";
+
+  try {
+    if (!window.webgazer) throw new Error("WebGazer script is not loaded");
+
+    await window.webgazer
+      .setRegression("ridge")
+      .setGazeListener((data) => {
+        if (!data || typeof data.x !== "number" || typeof data.y !== "number") return;
+        state.lastGazeAt = Date.now();
+        el.gazeStatus.textContent = "receiving";
+        addSample(data.x, data.y, "gaze");
+      })
+      .saveDataAcrossSessions(false)
+      .begin();
+
+    window.webgazer.setVideoViewerSize?.(320, 240);
+    window.webgazer.showVideo(true);
+    window.webgazer.showFaceOverlay(true);
+    window.webgazer.showFaceFeedbackBox(true);
+    window.webgazer.showPredictionPoints(true);
+
+    state.webgazerActive = true;
+    state.source = "gaze";
+    el.cameraStatus.textContent = "active";
+    el.gazeStatus.textContent = "waiting";
+    el.signalDot.classList.add("is-live");
+    el.trackingStatus.textContent = "Camera gaze proxy active";
+    el.cameraNote.textContent = "WebGazer is active. Look at one content block to form a heat region.";
+    switchScreen("calibration");
+    beginCalibration();
+  } catch (error) {
+    state.source = "simulation";
+    state.webgazerActive = false;
+    el.startDetectionButton.disabled = false;
+    el.cameraStatus.textContent = "unavailable";
+    el.introStatus.textContent = `Camera unavailable: ${error.message}. You can still test pointer fallback.`;
+    console.warn(error);
+  }
+}
+
+function openPointerFallback() {
+  state.source = "simulation";
+  state.webgazerActive = false;
+  el.signalDot.classList.remove("is-live");
+  el.trackingStatus.textContent = "Pointer / touch simulation active";
+  el.cameraNote.textContent = "Fallback mode: pointer and touch samples test only heatmap and ROI capture mechanics.";
+  switchScreen("capture");
+}
+
+function beginCalibration() {
+  clearCalibrationTimers();
+  state.calibrationIndex = 0;
+  state.calibrationTotalSamples = 0;
+  state.calibrationPointSamples = 0;
+  el.calibrationGrid.innerHTML = "";
+  el.calibrationProgress.style.width = "0%";
+
+  CALIBRATION_POINTS.forEach((pointConfig, index) => {
+    const point = document.createElement("span");
+    point.className = "calibration-point";
+    point.setAttribute("aria-label", `calibration point ${index + 1}`);
+    point.style.left = `${pointConfig.x}%`;
+    point.style.top = `${pointConfig.y}%`;
+    point.dataset.index = String(index);
+    el.calibrationGrid.appendChild(point);
+  });
+
+  advanceCalibrationPoint();
+}
+
+function advanceCalibrationPoint() {
+  clearCalibrationTimers();
+
+  if (state.calibrationIndex >= CALIBRATION_POINTS.length) {
+    el.calibrationProgress.style.width = "100%";
+    el.calibrationPointStatus.textContent = "9 / 9";
+    el.calibrationStatus.textContent = "Calibration complete. Moving to heatmap capture.";
+    window.setTimeout(() => switchScreen("capture"), 550);
+    return;
+  }
+
+  const point = CALIBRATION_POINTS[state.calibrationIndex];
+  const pointNode = el.calibrationGrid.querySelector(`[data-index="${state.calibrationIndex}"]`);
+  const pointNumber = state.calibrationIndex + 1;
+  state.calibrationPointSamples = 0;
+
+  el.calibrationGrid.querySelectorAll(".calibration-point").forEach((node) => node.classList.remove("is-active"));
+  pointNode?.classList.add("is-active");
+  el.calibrationProgress.style.width = `${(state.calibrationIndex / CALIBRATION_POINTS.length) * 100}%`;
+  el.calibrationPointStatus.textContent = `${pointNumber} / ${CALIBRATION_POINTS.length}`;
+  el.calibrationSampleStatus.textContent = String(state.calibrationTotalSamples);
+  el.calibrationStatus.textContent = `Point ${pointNumber}: look at the highlighted dot. WebGazer records known-point samples.`;
+
+  state.calibrationRecorder = window.setInterval(() => {
+    recordCalibrationSample(point.x, point.y);
+  }, CALIBRATION_RECORD_EVERY_MS);
+
+  state.calibrationTimeout = window.setTimeout(() => {
+    pointNode?.classList.remove("is-active");
+    pointNode?.classList.add("is-done");
+    state.calibrationIndex += 1;
+    el.calibrationProgress.style.width = `${(state.calibrationIndex / CALIBRATION_POINTS.length) * 100}%`;
+    advanceCalibrationPoint();
+  }, CALIBRATION_HOLD_MS);
+}
+
+function recordCalibrationSample(percentX, percentY) {
+  const rect = el.calibrationStage.getBoundingClientRect();
+  const screenX = rect.left + (percentX / 100) * rect.width;
+  const screenY = rect.top + (percentY / 100) * rect.height;
+
+  if (window.webgazer?.recordScreenPosition) {
+    window.webgazer.recordScreenPosition(screenX, screenY, CALIBRATION_EVENT_TYPE);
+    state.calibrationPointSamples += 1;
+    state.calibrationTotalSamples += 1;
+    el.calibrationSampleStatus.textContent = `${state.calibrationTotalSamples} (${state.calibrationPointSamples} on current)`;
+  }
+}
+
+function clearCalibrationTimers() {
+  if (state.calibrationTimeout) {
+    window.clearTimeout(state.calibrationTimeout);
+    state.calibrationTimeout = null;
+  }
+
+  if (state.calibrationRecorder) {
+    window.clearInterval(state.calibrationRecorder);
+    state.calibrationRecorder = null;
+  }
+}
+
+function skipCalibration() {
+  clearCalibrationTimers();
+  switchScreen("capture");
+}
+
+function recalibrate() {
+  if (state.webgazerActive) {
+    switchScreen("calibration");
+    beginCalibration();
+    return;
+  }
+
+  switchScreen("intro");
+  el.introStatus.textContent = "Start detection first to run WebGazer calibration.";
 }
 
 function getSurfacePoint(clientX, clientY) {
@@ -153,6 +333,11 @@ function moveGazeDot(clientX, clientY, source) {
   el.gazeDot.style.top = `${clientY}px`;
   el.gazeDot.classList.add("is-visible");
   el.gazeDot.dataset.source = source;
+}
+
+function handlePointerSample(event) {
+  if (state.webgazerActive && state.source !== "simulation") return;
+  addSample(event.clientX, event.clientY, "simulation");
 }
 
 function queueRender() {
@@ -249,15 +434,15 @@ function renderRoi() {
 function renderStats(max) {
   const hotPercent = max ? Math.min(99, Math.round(max * 28)) : 0;
   const dominant = getDominantRegion();
-  const mode = state.source === "gaze" ? "Camera gaze" : "Simulation";
+  const mode = state.source === "gaze" ? "Camera gaze" : state.source === "simulation" ? "Simulation" : "Waiting";
 
   el.sampleMetric.textContent = String(state.sampleCount);
   el.hotMetric.textContent = `${hotPercent}%`;
-  el.trackingStatus.textContent = state.source === "gaze" ? "Camera gaze proxy active" : "Pointer / touch simulation active";
+  el.trackingStatus.textContent = state.source === "gaze" ? "Camera gaze proxy active" : state.source === "simulation" ? "Pointer / touch simulation active" : "Waiting for gaze samples";
   el.regionTitle.textContent = dominant.region === "none" ? "Heat forming on test surface" : `${regionLabels[dominant.region]} is hottest`;
   el.regionCopy.textContent = state.roi
     ? `ROI is calculated from the strongest heat cluster and expanded by ${ROI_PADDING}px. Screenshot stays inside this page.`
-    : "Move or look at one area for a few seconds to form a stable heat region.";
+    : "Look at one area for a few seconds, or use pointer fallback to form a stable heat region.";
   el.regionStats.innerHTML = `
     <div><span>Mode</span><strong>${mode}</strong></div>
     <div><span>Dominant area</span><strong>${regionLabels[dominant.region] || regionLabels.none}</strong></div>
@@ -272,124 +457,6 @@ function getDominantRegion() {
     if (hits > best.hits) best = { region, hits };
   });
   return best;
-}
-
-async function startGaze() {
-  el.startGazeButton.disabled = true;
-  el.trackingStatus.textContent = "Requesting camera permission";
-  el.cameraNote.textContent = "Requesting camera permission from the browser...";
-
-  try {
-    if (!window.webgazer) throw new Error("WebGazer script is not loaded");
-
-    await window.webgazer
-      .setRegression("ridge")
-      .setGazeListener((data) => {
-        if (!data || typeof data.x !== "number" || typeof data.y !== "number") return;
-        addSample(data.x, data.y, "gaze");
-      })
-      .saveDataAcrossSessions(false)
-      .begin();
-
-    window.webgazer.showVideo(false);
-    window.webgazer.showFaceOverlay(false);
-    window.webgazer.showFaceFeedbackBox(false);
-    window.webgazer.showPredictionPoints(false);
-
-    state.source = "gaze";
-    el.signalDot.classList.add("is-live");
-    el.startGazeButton.textContent = "Camera on";
-    el.trackingStatus.textContent = "Camera gaze proxy active";
-    el.cameraNote.textContent = "Camera is active. Calibration records known screen points through WebGazer's recordScreenPosition API.";
-    openCalibration();
-  } catch (error) {
-    state.source = "simulation";
-    el.startGazeButton.disabled = false;
-    el.signalDot.classList.remove("is-live");
-    el.trackingStatus.textContent = "Camera unavailable; simulation active";
-    el.cameraNote.textContent = `Camera unavailable: ${error.message}. Use HTTPS, allow camera permission, then try Start camera again.`;
-    console.warn(error);
-  }
-}
-
-function openCalibration() {
-  clearCalibrationTimers();
-  state.calibrationIndex = 0;
-  el.calibration.classList.add("is-open");
-  el.calibration.setAttribute("aria-hidden", "false");
-  el.calibrationGrid.innerHTML = "";
-
-  CALIBRATION_POINTS.forEach((pointConfig, index) => {
-    const point = document.createElement("span");
-    point.className = "calibration-point";
-    point.setAttribute("aria-label", `calibration point ${index + 1}`);
-    point.style.left = `${pointConfig.x}%`;
-    point.style.top = `${pointConfig.y}%`;
-    point.dataset.index = String(index);
-    el.calibrationGrid.appendChild(point);
-  });
-
-  advanceCalibrationPoint();
-}
-
-function advanceCalibrationPoint() {
-  clearCalibrationTimers();
-
-  if (state.calibrationIndex >= CALIBRATION_POINTS.length) {
-    el.calibrationStatus.textContent = "Calibration complete. Start looking at the test surface.";
-    window.setTimeout(closeCalibration, 500);
-    return;
-  }
-
-  const point = CALIBRATION_POINTS[state.calibrationIndex];
-  const pointNode = el.calibrationGrid.querySelector(`[data-index="${state.calibrationIndex}"]`);
-  const pointNumber = state.calibrationIndex + 1;
-
-  el.calibrationGrid.querySelectorAll(".calibration-point").forEach((node) => node.classList.remove("is-active"));
-  pointNode?.classList.add("is-active");
-  el.calibrationProgress.style.width = `${(state.calibrationIndex / CALIBRATION_POINTS.length) * 100}%`;
-  el.calibrationStatus.textContent = `Point ${pointNumber} of ${CALIBRATION_POINTS.length}: look at the highlighted dot. WebGazer records repeated samples for this known point.`;
-
-  state.calibrationRecorder = window.setInterval(() => {
-    recordCalibrationSample(point.x, point.y);
-  }, CALIBRATION_RECORD_EVERY_MS);
-
-  state.calibrationTimeout = window.setTimeout(() => {
-    pointNode?.classList.remove("is-active");
-    pointNode?.classList.add("is-done");
-    state.calibrationIndex += 1;
-    el.calibrationProgress.style.width = `${(state.calibrationIndex / CALIBRATION_POINTS.length) * 100}%`;
-    advanceCalibrationPoint();
-  }, CALIBRATION_HOLD_MS);
-}
-
-function recordCalibrationSample(percentX, percentY) {
-  const rect = el.calibrationStage.getBoundingClientRect();
-  const screenX = rect.left + (percentX / 100) * rect.width;
-  const screenY = rect.top + (percentY / 100) * rect.height;
-
-  if (window.webgazer?.recordScreenPosition) {
-    window.webgazer.recordScreenPosition(screenX, screenY, CALIBRATION_EVENT_TYPE);
-  }
-}
-
-function closeCalibration() {
-  clearCalibrationTimers();
-  el.calibration.classList.remove("is-open");
-  el.calibration.setAttribute("aria-hidden", "true");
-  el.calibrationProgress.style.width = "0%";
-}
-
-function clearCalibrationTimers() {
-  if (state.calibrationTimeout) {
-    window.clearTimeout(state.calibrationTimeout);
-    state.calibrationTimeout = null;
-  }
-
-  if (state.calibrationRecorder) {
-    window.clearInterval(state.calibrationRecorder);
-    state.calibrationRecorder = null;
-  }
 }
 
 async function captureHotRegion() {
@@ -453,9 +520,9 @@ async function captureHotRegion() {
   }
 }
 
-function resetSession() {
+function resetHeat() {
   state.sampleCount = 0;
-  state.heat = Array.from({ length: GRID_ROWS }, () => Array(GRID_COLUMNS).fill(0));
+  state.heat = createHeatGrid();
   state.regionHits.clear();
   state.lastPoint = null;
   state.roi = null;
@@ -465,7 +532,6 @@ function resetSession() {
   el.downloadLink.removeAttribute("href");
   el.emptyPreview.hidden = false;
   el.gazeDot.classList.remove("is-visible");
-  closeCalibration();
   renderHeatmap();
 }
 
@@ -480,12 +546,20 @@ function clamp(value, min, max) {
 }
 
 buildHeatmapGrid();
+switchScreen("intro");
 renderHeatmap();
-el.captureSurface.addEventListener("pointermove", (event) => addSample(event.clientX, event.clientY, "simulation"));
-el.captureSurface.addEventListener("pointerdown", (event) => addSample(event.clientX, event.clientY, "simulation"));
-el.startGazeButton.addEventListener("click", startGaze);
+el.captureSurface.addEventListener("pointermove", handlePointerSample);
+el.captureSurface.addEventListener("pointerdown", handlePointerSample);
+el.startDetectionButton.addEventListener("click", startDetection);
+el.openFallbackButton.addEventListener("click", openPointerFallback);
+el.skipCalibrationButton.addEventListener("click", skipCalibration);
+el.recalibrateButton.addEventListener("click", recalibrate);
+el.resetButton.addEventListener("click", resetHeat);
 el.captureButton.addEventListener("click", captureHotRegion);
-el.resetButton.addEventListener("click", resetSession);
-el.skipCalibrationButton.addEventListener("click", closeCalibration);
 window.addEventListener("resize", () => renderHeatmap());
+window.setInterval(() => {
+  if (state.webgazerActive && Date.now() - state.lastGazeAt > 1800 && state.screen === "capture") {
+    el.gazeStatus.textContent = "waiting";
+  }
+}, 1000);
 registerServiceWorker();
