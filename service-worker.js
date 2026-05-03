@@ -1,4 +1,4 @@
-const CACHE_NAME = "uno-gaze-heat-region-v11";
+const CACHE_NAME = "uno-gaze-heat-region-v12";
 const ASSETS = [
   "./",
   "./index.html",

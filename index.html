@@ -7,10 +7,10 @@
     <title>UNO Gaze Heat Region</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=11" />
+    <link rel="stylesheet" href="./styles.css?v=12" />
     <script defer src="https://cdn.jsdelivr.net/npm/webgazer@3.5.3/dist/webgazer.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-    <script defer src="./app.js?v=11"></script>
+    <script defer src="./app.js?v=12"></script>
   </head>
   <body>
     <header class="top-bar">
@@ -20,7 +20,7 @@
       </div>
       <div class="step-indicator" aria-label="prototype steps">
         <span data-step-pill="intro">1 Feed</span>
-        <span data-step-pill="calibration">2 Calibrate</span>
+        <span data-step-pill="calibration">2 Validate</span>
         <span data-step-pill="capture">3 Capture</span>
       </div>
     </header>
@@ -40,7 +40,7 @@
               <button class="secondary-button" id="openFallbackButton" type="button">Pointer demo only</button>
             </div>
             <p class="status-note" id="introStatus">
-              Real gaze requires HTTPS, Android Chrome, and a real front camera. Pointer demo does not validate eye tracking.
+              Real gaze must pass calibration and target validation before it can generate a heatmap. Pointer demo does not validate eye tracking.
             </p>
             <details class="debug-panel">
               <summary>Diagnostics</summary>
@@ -84,8 +84,7 @@
             <p class="eyebrow">WebGazer calibration</p>
             <h2>看着高亮点，等待它自动进入下一点。</h2>
             <p>
-              页面会调用 WebGazer 的摄像头、人脸框和 face feedback box。每个高亮点都会通过
-              <code>recordScreenPosition(x, y, "click")</code> 记录已知屏幕点样本。
+              页面会先用 <code>recordScreenPosition(x, y, "click")</code> 做 WebGazer 校准，再用 5 个目标点检查预测是否跟随视线。
             </p>
             <div class="calibration-stats">
               <div><span>Camera</span><strong id="cameraStatus">waiting</strong></div>
@@ -95,7 +94,7 @@
               <div><span>Gaze output</span><strong id="gazeStatus">waiting</strong></div>
               <div><span>Last gaze</span><strong id="lastGazeStatus">--</strong></div>
             </div>
-            <button class="secondary-button" id="skipCalibrationButton" type="button">Skip to heatmap</button>
+            <button class="secondary-button" id="skipCalibrationButton" type="button">Retry calibration</button>
           </aside>
 
           <section class="calibration-stage" id="calibrationStage">
@@ -104,7 +103,7 @@
               <span id="calibrationProgress"></span>
             </div>
             <p class="calibration-status" id="calibrationStatus">
-              Real camera preview and face feedback should be visible. Keep your face inside the box and look only at the highlighted dot.
+              Real camera preview and face feedback should be visible. Heatmap capture starts only after validation passes.
             </p>
           </section>
         </div>
@@ -149,7 +148,7 @@
               </div>
 
               <div class="status-note" id="cameraNote">
-                WebGazer gaze samples will draw the heatmap. Pointer movement is fallback only.
+                Validated WebGazer gaze samples will draw the heatmap. Pointer movement is demo only.
               </div>
 
               <div class="test-surface" id="captureSurface">

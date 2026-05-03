@@ -533,6 +533,16 @@ body[data-screen="calibration"] .calibration-point {
   box-shadow: 0 0 0 12px rgba(71, 121, 111, 0.12);
 }
 
+.calibration-point.is-validation {
+  background: #52645d;
+}
+
+.calibration-point.is-failed {
+  background: #b45b4d;
+  opacity: 0.78;
+  box-shadow: 0 0 0 12px rgba(180, 91, 77, 0.14);
+}
+
 .calibration-progress {
   position: absolute;
   left: 18px;

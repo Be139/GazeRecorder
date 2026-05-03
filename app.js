@@ -7,8 +7,17 @@ const CALIBRATION_HOLD_MS = 1800;
 const CALIBRATION_RECORD_EVERY_MS = 180;
 const CALIBRATION_EVENT_TYPE = "click";
 const CAMERA_TRACK_TIMEOUT_MS = 6500;
+const VALIDATION_POINTS = [
+  { x: 50, y: 50 },
+  { x: 10, y: 10 },
+  { x: 90, y: 10 },
+  { x: 10, y: 78 },
+  { x: 90, y: 78 },
+];
+const VALIDATION_HOLD_MS = 1900;
+const VALIDATION_WARMUP_MS = 420;
 const MEDIAPIPE_FACE_MESH_PATH = "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh";
-const BUILD_VERSION = "2026-05-03-v11";
+const BUILD_VERSION = "2026-05-03-v12";
 const CALIBRATION_POINTS = [
   { x: 10, y: 10 },
   { x: 50, y: 10 },
@@ -46,6 +55,12 @@ const state = {
   calibrationTimeout: null,
   calibrationRecorder: null,
   realGazeSamples: 0,
+  gazeValidated: false,
+  validationActive: false,
+  validationIndex: 0,
+  validationStartedAt: 0,
+  validationCurrentSamples: [],
+  validationResults: [],
 };
 
 const el = {
@@ -146,11 +161,12 @@ async function startDetection() {
 
     state.webgazerActive = true;
     state.source = "gaze";
+    state.gazeValidated = false;
     el.cameraStatus.textContent = "active";
     el.gazeStatus.textContent = "waiting";
     el.signalDot.classList.add("is-live");
-    el.trackingStatus.textContent = "Camera gaze proxy active";
-    el.cameraNote.textContent = "WebGazer is active. Look at one content block to form a heat region.";
+    el.trackingStatus.textContent = "Camera active, gaze not validated";
+    el.cameraNote.textContent = "WebGazer is active, but heatmap capture waits until validation passes.";
     switchScreen("calibration");
     beginCalibration();
   } catch (error) {
@@ -178,15 +194,26 @@ function configureWebGazer(gaze) {
   gaze.saveDataAcrossSessions?.(false);
   gaze.setGazeListener?.((data) => {
     if (!data || typeof data.x !== "number" || typeof data.y !== "number") return;
-    state.lastGazeAt = Date.now();
-    state.realGazeSamples += 1;
-    el.gazeStatus.textContent = `receiving (${state.realGazeSamples})`;
-    el.lastGazeStatus.textContent = `${Math.round(data.x)}, ${Math.round(data.y)}`;
-    if (state.realGazeSamples <= 5 || state.realGazeSamples % 25 === 0) {
-      logDebug(`real gaze sample #${state.realGazeSamples}: ${Math.round(data.x)},${Math.round(data.y)}`);
-    }
-    addSample(data.x, data.y, "gaze");
+    handleGazePrediction(data.x, data.y);
   });
+}
+
+function handleGazePrediction(clientX, clientY) {
+  state.lastGazeAt = Date.now();
+  state.realGazeSamples += 1;
+  el.gazeStatus.textContent = `receiving (${state.realGazeSamples})`;
+  el.lastGazeStatus.textContent = `${Math.round(clientX)}, ${Math.round(clientY)}`;
+  if (state.realGazeSamples <= 5 || state.realGazeSamples % 25 === 0) {
+    logDebug(`real gaze sample #${state.realGazeSamples}: ${Math.round(clientX)},${Math.round(clientY)}`);
+  }
+
+  if (state.validationActive) {
+    recordValidationPrediction(clientX, clientY);
+  }
+
+  if (state.screen === "capture" && state.gazeValidated) {
+    addSample(clientX, clientY, "gaze");
+  }
 }
 
 function showWebGazerFeedback(gaze) {
@@ -261,11 +288,17 @@ function openPointerFallback() {
 
 function beginCalibration() {
   clearCalibrationTimers();
+  state.validationActive = false;
+  state.gazeValidated = false;
   state.calibrationIndex = 0;
   state.calibrationTotalSamples = 0;
   state.calibrationPointSamples = 0;
   el.calibrationGrid.innerHTML = "";
   el.calibrationProgress.style.width = "0%";
+  el.calibrationStatus.textContent = "Calibration: look at the highlighted dot. Do not tap the points.";
+  el.calibrationPointStatus.textContent = "0 / 9";
+  el.calibrationSampleStatus.textContent = "0";
+  el.gazeStatus.textContent = state.realGazeSamples ? `receiving (${state.realGazeSamples})` : "waiting";
 
   CALIBRATION_POINTS.forEach((pointConfig, index) => {
     const point = document.createElement("span");
@@ -286,8 +319,8 @@ function advanceCalibrationPoint() {
   if (state.calibrationIndex >= CALIBRATION_POINTS.length) {
     el.calibrationProgress.style.width = "100%";
     el.calibrationPointStatus.textContent = "9 / 9";
-    el.calibrationStatus.textContent = "Calibration complete. Moving to heatmap capture.";
-    window.setTimeout(() => switchScreen("capture"), 550);
+    el.calibrationStatus.textContent = "Calibration complete. Starting gaze validation before heatmap capture.";
+    window.setTimeout(() => beginValidation(), 550);
     return;
   }
 
@@ -317,9 +350,7 @@ function advanceCalibrationPoint() {
 }
 
 function recordCalibrationSample(percentX, percentY) {
-  const rect = el.calibrationStage.getBoundingClientRect();
-  const screenX = rect.left + (percentX / 100) * rect.width;
-  const screenY = rect.top + (percentY / 100) * rect.height;
+  const { screenX, screenY } = getStagePointScreenPosition(percentX, percentY);
 
   if (window.webgazer?.recordScreenPosition) {
     window.webgazer.recordScreenPosition(screenX, screenY, CALIBRATION_EVENT_TYPE);
@@ -327,6 +358,140 @@ function recordCalibrationSample(percentX, percentY) {
     state.calibrationTotalSamples += 1;
     el.calibrationSampleStatus.textContent = `${state.calibrationTotalSamples} (${state.calibrationPointSamples} on current)`;
   }
+}
+
+function beginValidation() {
+  clearCalibrationTimers();
+  state.validationActive = true;
+  state.gazeValidated = false;
+  state.validationIndex = 0;
+  state.validationResults = [];
+  state.validationCurrentSamples = [];
+  el.calibrationGrid.innerHTML = "";
+  el.calibrationProgress.style.width = "0%";
+  el.calibrationPointStatus.textContent = `0 / ${VALIDATION_POINTS.length}`;
+  el.calibrationSampleStatus.textContent = "0 validation";
+  el.calibrationStatus.textContent = "Validation: look at each highlighted dot. Heatmap starts only if predictions follow the dots.";
+
+  VALIDATION_POINTS.forEach((pointConfig, index) => {
+    const point = document.createElement("span");
+    point.className = "calibration-point is-validation";
+    point.setAttribute("aria-label", `validation point ${index + 1}`);
+    point.style.left = `${pointConfig.x}%`;
+    point.style.top = `${pointConfig.y}%`;
+    point.dataset.index = String(index);
+    el.calibrationGrid.appendChild(point);
+  });
+
+  advanceValidationPoint();
+}
+
+function advanceValidationPoint() {
+  clearCalibrationTimers();
+
+  if (state.validationIndex >= VALIDATION_POINTS.length) {
+    finishValidation();
+    return;
+  }
+
+  const pointNode = el.calibrationGrid.querySelector(`[data-index="${state.validationIndex}"]`);
+  const pointNumber = state.validationIndex + 1;
+  state.validationStartedAt = Date.now();
+  state.validationCurrentSamples = [];
+
+  el.calibrationGrid.querySelectorAll(".calibration-point").forEach((node) => node.classList.remove("is-active"));
+  pointNode?.classList.add("is-active");
+  el.calibrationProgress.style.width = `${(state.validationIndex / VALIDATION_POINTS.length) * 100}%`;
+  el.calibrationPointStatus.textContent = `${pointNumber} / ${VALIDATION_POINTS.length}`;
+  el.calibrationSampleStatus.textContent = "0 validation";
+  el.calibrationStatus.textContent = `Validation ${pointNumber}: look at the highlighted dot. The app is checking whether WebGazer follows your gaze.`;
+
+  state.calibrationTimeout = window.setTimeout(() => {
+    const result = scoreValidationPoint(state.validationCurrentSamples);
+    state.validationResults.push(result);
+    pointNode?.classList.remove("is-active");
+    pointNode?.classList.add(result.passed ? "is-done" : "is-failed");
+    state.validationIndex += 1;
+    el.calibrationProgress.style.width = `${(state.validationIndex / VALIDATION_POINTS.length) * 100}%`;
+    advanceValidationPoint();
+  }, VALIDATION_HOLD_MS);
+}
+
+function recordValidationPrediction(clientX, clientY) {
+  if (!state.validationActive || Date.now() - state.validationStartedAt < VALIDATION_WARMUP_MS) return;
+
+  const point = VALIDATION_POINTS[state.validationIndex];
+  if (!point) return;
+
+  const target = getStagePointScreenPosition(point.x, point.y);
+  const distance = Math.hypot(clientX - target.screenX, clientY - target.screenY);
+  state.validationCurrentSamples.push(distance);
+  el.calibrationSampleStatus.textContent = `${state.validationCurrentSamples.length} validation`;
+}
+
+function scoreValidationPoint(distances) {
+  const threshold = getValidationRadius();
+  if (distances.length < 4) {
+    return { passed: false, samples: distances.length, meanError: Infinity, hitRatio: 0, threshold };
+  }
+
+  const meanError = distances.reduce((sum, value) => sum + value, 0) / distances.length;
+  const hitRatio = distances.filter((distance) => distance <= threshold).length / distances.length;
+  return {
+    passed: hitRatio >= 0.35 && meanError <= threshold * 1.45,
+    samples: distances.length,
+    meanError,
+    hitRatio,
+    threshold,
+  };
+}
+
+function finishValidation() {
+  state.validationActive = false;
+  const passedPoints = state.validationResults.filter((result) => result.passed).length;
+  const usableResults = state.validationResults.filter((result) => Number.isFinite(result.meanError));
+  const meanError = usableResults.length
+    ? usableResults.reduce((sum, result) => sum + result.meanError, 0) / usableResults.length
+    : Infinity;
+  const threshold = getValidationRadius();
+  const validationPassed = passedPoints >= 3 && meanError <= threshold * 1.55;
+
+  el.calibrationProgress.style.width = "100%";
+  el.calibrationPointStatus.textContent = `${passedPoints} / ${VALIDATION_POINTS.length}`;
+  el.calibrationSampleStatus.textContent = Number.isFinite(meanError) ? `${Math.round(meanError)}px mean` : "no gaze";
+
+  if (!validationPassed) {
+    state.gazeValidated = false;
+    state.source = "waiting";
+    el.gazeStatus.textContent = `failed (${passedPoints}/${VALIDATION_POINTS.length})`;
+    el.trackingStatus.textContent = "Gaze validation failed";
+    el.cameraNote.textContent = "WebGazer predictions did not match validation targets. This run is not reliable for heatmap capture.";
+    el.calibrationStatus.textContent = "Validation failed: predictions did not follow the target points. Retry with a live face, stable phone, and better lighting.";
+    logDebug(`validation failed. passed=${passedPoints}/${VALIDATION_POINTS.length} mean=${Number.isFinite(meanError) ? Math.round(meanError) : "none"} threshold=${Math.round(threshold)}`);
+    return;
+  }
+
+  state.gazeValidated = true;
+  state.source = "gaze";
+  resetHeat();
+  el.gazeStatus.textContent = `validated (${passedPoints}/${VALIDATION_POINTS.length})`;
+  el.trackingStatus.textContent = "Validated camera gaze active";
+  el.cameraNote.textContent = "Gaze validation passed. Heatmap now uses WebGazer predictions from this page only.";
+  el.calibrationStatus.textContent = "Validation passed. Moving to heatmap capture.";
+  logDebug(`validation passed. passed=${passedPoints}/${VALIDATION_POINTS.length} mean=${Math.round(meanError)} threshold=${Math.round(threshold)}`);
+  window.setTimeout(() => switchScreen("capture"), 700);
+}
+
+function getValidationRadius() {
+  return clamp(Math.hypot(window.innerWidth, window.innerHeight) * 0.18, 110, 190);
+}
+
+function getStagePointScreenPosition(percentX, percentY) {
+  const rect = el.calibrationStage.getBoundingClientRect();
+  return {
+    screenX: rect.left + (percentX / 100) * rect.width,
+    screenY: rect.top + (percentY / 100) * rect.height,
+  };
 }
 
 function clearCalibrationTimers() {
@@ -343,11 +508,19 @@ function clearCalibrationTimers() {
 
 function skipCalibration() {
   clearCalibrationTimers();
-  switchScreen("capture");
+  state.validationActive = false;
+  state.gazeValidated = false;
+  if (state.webgazerActive) {
+    beginCalibration();
+    return;
+  }
+
+  switchScreen("intro");
 }
 
 function recalibrate() {
   if (state.webgazerActive) {
+    state.gazeValidated = false;
     switchScreen("calibration");
     beginCalibration();
     return;
@@ -528,15 +701,17 @@ function renderRoi() {
 function renderStats(max) {
   const hotPercent = max ? Math.min(99, Math.round(max * 28)) : 0;
   const dominant = getDominantRegion();
-  const mode = state.source === "gaze" ? "Camera gaze" : state.source === "simulation" ? "Simulation" : "Waiting";
+  const mode = state.source === "gaze" && state.gazeValidated ? "Validated camera gaze" : state.source === "gaze" ? "Unvalidated camera gaze" : state.source === "simulation" ? "Simulation" : "Waiting";
 
   el.sampleMetric.textContent = String(state.sampleCount);
   el.hotMetric.textContent = `${hotPercent}%`;
-  el.trackingStatus.textContent = state.source === "gaze" ? "Camera gaze proxy active" : state.source === "simulation" ? "Pointer / touch simulation active" : "Waiting for gaze samples";
+  el.trackingStatus.textContent = state.source === "gaze" && state.gazeValidated ? "Validated camera gaze active" : state.source === "gaze" ? "Camera gaze not validated" : state.source === "simulation" ? "Pointer / touch simulation active" : "Waiting for gaze samples";
   el.regionTitle.textContent = dominant.region === "none" ? "Heat forming on test surface" : `${regionLabels[dominant.region]} is hottest`;
   el.regionCopy.textContent = state.roi
     ? `ROI is calculated from the strongest heat cluster and expanded by ${ROI_PADDING}px. Screenshot stays inside this page.`
-    : "Look at one area for a few seconds, or use pointer fallback to form a stable heat region.";
+    : state.source === "gaze" && !state.gazeValidated
+      ? "Gaze predictions are not validated, so they are not allowed to generate a heat region."
+      : "Look at one area for a few seconds, or use pointer fallback to form a stable heat region.";
   el.regionStats.innerHTML = `
     <div><span>Mode</span><strong>${mode}</strong></div>
     <div><span>Dominant area</span><strong>${regionLabels[dominant.region] || regionLabels.none}</strong></div>
